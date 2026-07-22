@@ -1,0 +1,9 @@
+{
+  "name": "joey-soffer-podcast-player",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs", "test": "node --test" },
+  "dependencies": { "hls.js": "1.6.16" },
+  "engines": { "node": ">=18" }
+}
