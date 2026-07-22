@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#17140f"><meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Rabbi Joey Soffer Shiurim">
+  <title>Rabbi Joey Soffer Shiurim</title><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css?v=11">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="Rabbi Joey Soffer Shiurim home"><span class="brand-mark">JS</span><span>RABBI JOEY SOFFER SHIURIM</span></a>
+    <div class="top-actions"><button id="installBtn" class="ghost-btn install-btn" type="button" hidden>Install app</button><button id="refreshBtn" class="ghost-btn" type="button"><span aria-hidden="true">↻</span> Refresh feeds</button></div>
+  </header>
+  <main>
+    <section class="hero">
+      <h1>Rabbi Joey Soffer<br><em>Shiurim</em></h1>
+      <div class="feed-row">
+        <input id="feedInput" type="url" aria-label="Podcast RSS feed" placeholder="Paste an RSS feed URL">
+        <button id="addFeedBtn" class="primary-btn" type="button">Add feed</button>
+      </div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="library" aria-labelledby="libraryTitle">
+      <div class="library-heading">
+        <div><p class="eyebrow">LIBRARY</p><h2 id="libraryTitle">Latest episodes</h2></div>
+        <span id="episodeCount" class="count">0 episodes</span>
+      </div>
+      <div class="tools">
+        <label class="search"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Search episodes" aria-label="Search episodes"></label>
+        <select id="sortSelect" aria-label="Sort episodes">
+          <option value="date-desc">Date · newest first</option><option value="date-asc">Date · oldest first</option>
+          <option value="file-asc">File name · A to Z</option><option value="file-desc">File name · Z to A</option>
+          <option value="title-asc">Title · A to Z</option><option value="title-desc">Title · Z to A</option>
+        </select>
+      </div>
+      <div id="episodeList" class="episode-list"><div class="empty">Fetching your podcast…</div></div>
+    </section>
+  </main>
+
+  <aside id="player" class="player" aria-label="Audio player">
+    <div class="now-playing"><div id="playerArt" class="mini-art">JS</div><div><span class="mini-label">NOW PLAYING</span><strong id="playerTitle">Choose an episode</strong><span id="playerShow">Rabbi Joey Soffer Shiurim</span></div></div>
+    <div class="transport">
+      <div class="buttons"><button id="backBtn" aria-label="Back 15 seconds">↶<small>15</small></button><button id="playBtn" class="play" aria-label="Play">▶</button><button id="forwardBtn" aria-label="Forward 30 seconds">↷<small>30</small></button></div>
+      <div class="timeline"><span id="currentTime">0:00</span><input id="seek" type="range" min="0" max="100" value="0" aria-label="Playback position"><span id="duration">0:00</span></div>
+    </div>
+    <label class="speed">SPEED<select id="speedSelect" aria-label="Playback speed"><option>1</option><option>1.25</option><option>1.5</option><option>1.75</option><option>2</option></select><span>×</span></label>
+  </aside>
+  <audio id="audio" preload="metadata"></audio>
+  <div id="installHelp" class="install-help" hidden><strong>Install Rabbi Joey Soffer Shiurim</strong><p id="installHelpText"></p><button id="closeInstallHelp" type="button">Got it</button></div>
+  <script src="/vendor/hls.min.js?v=1.6.16" onload="document.documentElement.dataset.hls='loaded'" onerror="document.documentElement.dataset.hls='error'"></script>
+  <script type="module" src="app.js?v=11"></script>
+</body></html>
