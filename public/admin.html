@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>RJS Torah Admin</title>
+  <link rel="stylesheet" href="/admin.css?v=76">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div><p class="eyebrow">RJS Torah</p><h1>Library Admin</h1><p class="sub">Organize classes without releasing a new app version.</p></div>
+      <button id="logout" class="quiet hidden">Log out</button>
+    </header>
+    <section id="loginView" class="card login">
+      <h2>Admin sign in</h2>
+      <label>Password<input id="password" type="password" autocomplete="current-password"></label>
+      <button id="login">Sign in</button><p id="loginMessage" class="message"></p>
+    </section>
+    <div id="adminView" class="hidden">
+      <nav class="tabs" aria-label="Admin sections"><button class="tab active" data-panel="folders">Organize folders</button><button class="tab" data-panel="rules">Filing rules</button><button class="tab" data-panel="episodes">File a class</button></nav>
+      <section id="foldersPanel" class="panel">
+        <div class="card"><h2>Create a folder</h2><div class="row"><input id="newFolder" placeholder="Folder name"><button id="addFolder">Add folder</button></div></div>
+        <div class="card">
+          <h2>Listening app folder structure</h2>
+          <p class="sub">This is the final folder hierarchy shown in the listening app. Rename, move, or remove any folder or subfolder here.</p>
+          <div id="listeningFolderTree"><p>Loading the listening app structure…</p></div>
+          <div id="removedFolderList"></div>
+        </div>
+        <div class="card">
+          <h2>Catalog folders and placement</h2>
+          <p class="sub">Move an existing folder into any master folder without rebuilding its rules.</p>
+          <div id="currentFolderList"><p>Loading the complete catalog…</p></div>
+        </div>
+        <h2>Folder-building tools</h2>
+        <p class="sub">Use these controls to add subfolders. Removing a folder here also removes it from the listening app.</p>
+        <div id="folderList"></div>
+      </section>
+      <section id="rulesPanel" class="panel hidden">
+        <div class="section-intro">
+          <p class="eyebrow">Automatic organization</p>
+          <h2>Filing rules</h2>
+          <p class="sub">Rules check each episode title and place matching classes into the folder you choose. Your changes also apply automatically to future uploads.</p>
+        </div>
+        <div class="card">
+          <h2>Edit built-in rules</h2>
+          <p class="sub">Change the words a rule looks for or its destination folder. Deleted rules can be restored below.</p>
+          <div id="builtInRuleList"></div>
+        </div>
+        <div class="card">
+          <h2>Add a new filing rule</h2>
+          <p class="sub">Use this for a new topic that is not covered by the built-in rules.</p>
+          <label>If the episode title contains<input id="ruleContains" placeholder="Example: neighbors"></label>
+          <label>Put it in<select id="ruleFolder"></select></label>
+          <label>Subfolder method<select id="ruleStrategy"><option value="none">No subfolder</option><option value="first_word">First word of title</option><option value="word_after">Word after a phrase</option><option value="before_word">Everything before a phrase</option><option value="fixed">A fixed subfolder</option></select></label>
+          <label id="markerWrap" class="hidden">Phrase to find<input id="ruleMarker" placeholder="Example: daf"></label>
+          <label id="fixedWrap" class="hidden">Subfolder name<input id="ruleSubfolder" placeholder="Subfolder name"></label>
+          <button id="addRule">Create rule</button>
+        </div>
+        <h2 class="list-heading">Your added rules</h2>
+        <div id="ruleList"></div>
+      </section>
+      <section id="episodesPanel" class="panel hidden">
+        <div class="card"><h2>File a particular class</h2><label>Search the complete catalog<input id="episodeSearch" type="search" placeholder="Type an episode title"></label><div id="episodeResults" class="results"></div></div>
+        <div class="card">
+          <h2>Unfiled classes</h2>
+          <p id="unfiledCount" class="sub">Loading unfiled classes...</p>
+          <div id="unfiledResults" class="results"></div>
+        </div>
+        <div id="assignmentCard" class="card hidden">
+          <h2 id="selectedTitle"></h2>
+          <label>Put this class in<select id="assignmentFolder"></select></label>
+          <div class="row"><button id="saveAssignment">Save filing</button><button id="removeAssignment" class="danger">Remove manual filing</button></div>
+        </div>
+      </section>
+      <div class="savebar"><span id="saveMessage">Changes save automatically.</span><button id="saveAll">Save now</button></div>
+    </div>
+  </main>
+  <script src="/admin.js?v=76"></script>
+</body>
+</html>
