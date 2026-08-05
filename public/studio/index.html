@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f1ea">
+  <meta name="description" content="Record, edit, and publish podcast episodes from your phone.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Podcast Studio">
+  <title>Podcast Studio</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="styles.css?v=98">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="Podcast Studio home">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      <span>Podcast Studio</span>
+    </a>
+    <nav class="nav-tabs" aria-label="Main navigation">
+      <button class="nav-tab active" data-view="studio">Studio</button>
+      <button class="nav-tab" data-view="library">Episodes <span id="episodeCount" class="count">0</span></button>
+    </nav>
+    <div class="header-actions">
+      <button class="install-button hidden" id="installButton">Install app</button>
+      <button class="icon-button new-recording-header" id="newRecordingHeaderButton" aria-label="Start a new recording" title="New recording">+</button>
+      <button class="icon-button" id="settingsButton" aria-label="Open settings" title="Connections & settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.57 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 10 3.01V3h4v.08a1.7 1.7 0 0 0 1.03 1.52 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 7l-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.96 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="offlineBanner" class="offline-banner hidden">Offline — recording and editing still work. Publishing will resume when connected.</div>
+
+  <main>
+    <section id="studioView" class="view active">
+      <div id="newEpisode" class="new-episode">
+        <p class="eyebrow">NEW RECORDING</p>
+        <h1>Rabbi Joey Soffer Shiurim</h1>
+        <time id="homeDateTime" class="home-datetime"></time>
+        <p class="subhead">Name your episode now. You can change it later.</p>
+        <form id="episodeForm" class="title-form">
+          <label for="episodeTitle">Episode name</label>
+          <div class="title-row">
+            <input id="episodeTitle" maxlength="120" autocomplete="off" placeholder="e.g. The quiet work behind big ideas" required>
+            <button class="primary-button" type="submit">Set up studio <span aria-hidden="true">→</span></button>
+          </div>
+          <button id="titleSuggestion" class="title-suggestion hidden" type="button"></button>
+        </form>
+        <div class="draft-card hidden" id="draftCard">
+          <div><span class="draft-icon">↻</span><div><strong>Recording recovered</strong><small id="draftText"></small></div></div>
+          <button id="openDraft">Open draft</button>
+        </div>
+      </div>
+
+      <div id="recorder" class="recorder hidden">
+        <div class="studio-heading">
+          <div>
+            <p class="eyebrow">RECORDING STUDIO</p>
+            <input id="activeTitle" class="active-title" aria-label="Episode title" maxlength="120">
+          </div>
+          <span id="saveStatus" class="save-status"><i></i> Saved locally</span>
+        </div>
+
+        <section class="recorder-card">
+          <div class="recorder-topline">
+            <span id="recordingState" class="state-pill ready"><i></i> Ready</span>
+            <time id="timer">00:00:00</time>
+            <button id="discardButton" class="text-button danger hidden">Discard</button>
+          </div>
+
+          <div id="liveWave" class="live-wave" aria-label="Live audio level">
+            <canvas id="liveCanvas"></canvas>
+            <div class="center-line"></div>
+          </div>
+
+          <div id="editorWave" class="editor-wave hidden">
+            <canvas id="waveCanvas"></canvas>
+            <div id="playhead" class="playhead"></div>
+            <div id="trimShadeLeft" class="trim-shade left"></div>
+            <div id="trimShadeRight" class="trim-shade right"></div>
+          </div>
+
+          <div class="record-controls">
+            <button id="pauseButton" class="round-button secondary hidden" aria-label="Pause recording" title="Pause recording">
+              <svg class="pause-icon" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+              <svg class="resume-icon hidden" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg>
+            </button>
+            <button id="recordButton" class="record-button" aria-label="Start recording"><span></span></button>
+            <button id="stopButton" class="round-button stop hidden" aria-label="Finish recording" title="Finish recording"><span></span></button>
+          </div>
+          <p id="recordHint" class="record-hint">Press the red button to begin</p>
+
+          <div id="inputBar" class="input-bar">
+            <label for="micSelect">
+              <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3Z"/><path d="M19 11v1a7 7 0 0 1-14 0v-1M12 19v3M8 22h8"/></svg>
+              Input
+            </label>
+            <select id="micSelect"><option value="">Default microphone</option></select>
+            <div class="meter" aria-label="Input level"><i id="inputMeter"></i></div>
+            <button id="testMic" class="text-button">Test</button>
+          </div>
+        </section>
+
+        <section id="editorPanel" class="editor-panel hidden">
+          <div class="section-title-row">
+            <div><p class="eyebrow">QUICK EDIT</p><h2>Polish your episode</h2></div>
+            <div class="undo-row"><button id="undoEdit" class="icon-text-button" disabled>↶ Undo</button><button id="resetEdit" class="icon-text-button">Reset</button></div>
+          </div>
+          <div class="edit-grid">
+            <div class="transport-panel">
+              <div class="transport-row">
+                <button id="playButton" class="play-button" aria-label="Play"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg></button>
+                <div><span id="currentTime">00:00</span><small>/ <span id="totalTime">00:00</span></small></div>
+                <button id="skipBack" class="skip-button" title="Back 5 seconds">↶ <small>5</small></button>
+                <button id="skipForward" class="skip-button" title="Forward 5 seconds">↷ <small>5</small></button>
+              </div>
+              <p>Select a section below. You can keep it, cut it out, replace it, or add more recording to the end.</p>
+            </div>
+            <div class="tools-panel">
+              <div class="range-pair">
+                <label>Selection start <output id="trimStartValue">0:00</output><input id="trimStart" type="range" min="0" max="100" value="0" step="0.01"></label>
+                <label>Selection end <output id="trimEndValue">0:00</output><input id="trimEnd" type="range" min="0" max="100" value="100" step="0.01"></label>
+              </div>
+              <div class="splice-actions" aria-label="Audio editing actions">
+                <button id="trimSelectionButton" class="secondary-button" type="button">Keep only selection</button>
+                <button id="cutSelectionButton" class="secondary-button" type="button">Cut selection</button>
+                <button id="recordReplacementButton" class="secondary-button" type="button">Record replacement</button>
+                <button id="insertAudioButton" class="secondary-button" type="button">Insert audio file</button>
+                <input id="insertAudioInput" class="hidden" type="file" accept="audio/*">
+                <button id="continueRecordingButton" class="primary-button continue-button" type="button">Continue recording</button>
+              </div>
+              <div class="tool-toggles">
+                <button class="tool-toggle" data-edit="normalize"><span>⌁</span><div><strong>Level audio</strong><small>Even out volume</small></div><i></i></button>
+                <button class="tool-toggle" data-edit="fade"><span>◒</span><div><strong>Soft edges</strong><small>1 sec fade in & out</small></div><i></i></button>
+              </div>
+              <div class="save-edit-row">
+                <button id="saveEditButton" class="primary-button" type="button">Save edited version</button>
+                <small id="editSaveHint">Edits are created and stored on this phone.</small>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="publishPanel" class="publish-panel hidden">
+          <div><p class="eyebrow">PUBLISH</p><h2>Send it to your listeners</h2><p>Your WAV master stays saved on this device.</p></div>
+          <div class="destination-list">
+            <label class="destination"><input id="dropboxDestination" type="checkbox" checked><span class="service-logo dropbox">◆</span><span><strong>Dropbox</strong><small id="dropboxStatus">Not connected</small></span><i class="checkmark">✓</i></label>
+            <label class="destination"><input id="soundcloudDestination" type="checkbox" checked><span class="service-logo soundcloud">☁</span><span><strong>SoundCloud</strong><small id="soundcloudStatus">Not connected</small></span><i class="checkmark">✓</i></label>
+          </div>
+          <div class="publish-options">
+            <label>SoundCloud visibility<select id="sharing"><option value="public" selected>Public</option><option value="private">Private</option></select></label>
+            <button id="downloadButton" class="secondary-button">Download WAV</button>
+            <button id="publishButton" class="primary-button"><span>Publish episode</span><i class="spinner hidden"></i></button>
+          </div>
+          <p id="publishNote" class="publish-note hidden"></p>
+        </section>
+      </div>
+    </section>
+
+    <section id="libraryView" class="view library-view">
+      <div class="library-heading"><div><p class="eyebrow">YOUR SHOW</p><h1>Episodes</h1><p class="subhead">Recordings and published episodes saved on this device.</p></div><button id="newRecordingButton" class="primary-button">＋ New recording</button></div>
+      <div id="episodeList" class="episode-list"></div>
+      <div id="emptyLibrary" class="empty-library"><span>♫</span><h2>No episodes yet</h2><p>Your recordings will appear here.</p><button class="secondary-button" id="emptyRecordButton">Record your first episode</button></div>
+    </section>
+  </main>
+
+  <dialog id="settingsDialog" class="settings-dialog">
+    <form method="dialog" class="dialog-shell">
+      <div class="dialog-heading"><div><p class="eyebrow">SETTINGS</p><h2>Publishing connections</h2></div><button class="icon-button close-dialog" value="cancel" aria-label="Close">×</button></div>
+      <p class="dialog-intro">Your account credentials and connection tokens remain in this app's private local data folder.</p>
+      <div class="connection-card">
+        <div class="connection-title"><span class="service-logo dropbox">◆</span><div><strong>Dropbox</strong><small id="dropboxConnectionText">Not configured</small></div><button type="button" id="dropboxConnect" class="connect-button">Set up</button></div>
+        <div id="dropboxSetup" class="credentials hidden">
+          <label>App key<input id="dropboxClientId" autocomplete="off"></label>
+          <label>App secret<input id="dropboxClientSecret" type="password" autocomplete="off"></label>
+          <p>Add this redirect URI to your Dropbox app: <code id="dropboxCallback"></code></p>
+        </div>
+      </div>
+      <div class="connection-card">
+        <div class="connection-title"><span class="service-logo soundcloud">☁</span><div><strong>SoundCloud</strong><small id="soundcloudConnectionText">Not configured</small></div><button type="button" id="soundcloudConnect" class="connect-button">Set up</button></div>
+        <div id="soundcloudSetup" class="credentials hidden">
+          <label>Client ID<input id="soundcloudClientId" autocomplete="off"></label>
+          <label>Client secret<input id="soundcloudClientSecret" type="password" autocomplete="off"></label>
+          <p>Add this redirect URI to your SoundCloud app: <code id="soundcloudCallback"></code></p>
+        </div>
+      </div>
+      <label class="auto-publish-setting"><input id="autoPublish" type="checkbox" checked><span><strong>Publish automatically</strong><small>When both accounts are connected, finishing a recording sends a public SoundCloud copy and a Dropbox WAV immediately.</small></span><i></i></label>
+      <div class="dialog-actions"><button value="cancel" class="secondary-button">Close</button><button type="button" id="saveConnections" class="primary-button">Save credentials</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="clipRecorderDialog" class="clip-recorder-dialog">
+    <div class="dialog-shell clip-recorder-shell">
+      <p id="clipRecorderEyebrow" class="eyebrow">CONTINUE RECORDING</p>
+      <h2 id="clipRecorderTitle">Recording additional audio</h2>
+      <time id="clipRecorderTimer">00:00</time>
+      <p id="clipRecorderHelp">The new audio will be added to the end of this episode.</p>
+      <div class="clip-recorder-controls">
+        <button id="clipPauseButton" class="secondary-button" type="button">Pause</button>
+        <button id="clipStopButton" class="primary-button" type="button">Stop &amp; use clip</button>
+        <button id="clipCancelButton" class="text-button danger" type="button">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="confirmDialog" class="confirm-dialog">
+    <form method="dialog"><span class="warning-icon">!</span><h2>Discard this recording?</h2><p>This removes the audio saved on this device. It cannot be undone.</p><div><button value="cancel" class="secondary-button">Keep it</button><button id="confirmDiscard" value="confirm" class="danger-button">Discard</button></div></form>
+  </dialog>
+
+  <dialog id="loginDialog" class="login-dialog">
+    <form id="loginForm" class="login-shell">
+      <span class="brand-mark login-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      <p class="eyebrow">PRIVATE STUDIO</p>
+      <h2>Welcome back</h2>
+      <p>Your recordings and publishing connections are protected by your personal password.</p>
+      <label for="loginPassword">Password</label>
+      <input id="loginPassword" type="password" autocomplete="current-password" required>
+      <p id="loginError" class="login-error hidden"></p>
+      <button class="primary-button" type="submit">Open Podcast Studio</button>
+    </form>
+  </dialog>
+
+  <div id="toastRegion" class="toast-region" aria-live="polite"></div>
+  <script src="app.js?v=98"></script>
+</body>
+</html>
