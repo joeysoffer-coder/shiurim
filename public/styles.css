@@ -180,6 +180,8 @@ h1{font-size:clamp(44px,6.4vw,78px);line-height:.91;letter-spacing:-3.5px;margin
   .player-episode-actions{gap:3px}
   .player-episode-actions button{width:32px!important;min-width:32px!important;height:28px!important;min-height:28px!important;padding:0!important;font-size:0!important;border-radius:8px}
   .player-episode-actions button:before{font-size:13px}
+  #playerFavoriteBtn:before{content:"☆";color:var(--accent)}
+  #playerFavoriteBtn.is-favorite:before{content:"★";color:var(--paper)}
   .speed{right:10px!important;top:52px!important;padding:0!important;border:0!important;border-radius:0!important;color:color-mix(in srgb,var(--paper) 72%,var(--ink));font-size:8px!important;letter-spacing:1px!important}
   .speed select{width:58px!important;height:26px!important;min-height:26px!important}
   .buttons{height:41px}
