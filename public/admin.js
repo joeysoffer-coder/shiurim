@@ -383,11 +383,11 @@ function renderPanel(panel){
   else if(panel==='theme')renderTheme();
   else if(panel==='analytics'){updateAnalyticsDateControls();loadAnalytics()}
 }
-function openAdminPanel(panel){
+function openAdminPanel(panel,render=true){
   const tab=document.querySelector(`.tab[data-panel="${panel}"]`);if(!tab)return;
   document.querySelectorAll('.tab').forEach(item=>item.classList.toggle('active',item===tab));
   document.querySelectorAll('.panel').forEach(item=>item.classList.toggle('hidden',item.id!==`${panel}Panel`));
-  requestAnimationFrame(()=>renderPanel(panel));
+  if(render)requestAnimationFrame(()=>renderPanel(panel));
 }
 function replacePathPrefix(oldPath,newPath){
   const replace=path=>path?.slice(0,oldPath.length).every((part,i)=>part===oldPath[i])?[...newPath,...path.slice(oldPath.length)]:path;
@@ -402,9 +402,9 @@ async function login(){
 async function load(){
   const response=await fetch('/api/admin/config',{headers:auth()});
   if(!response.ok){sessionStorage.removeItem('rjsAdminToken');token='';showAdmin(false);return}
-  config=await response.json();normalizeConfig();const addedAssignedFolders=syncOverrideFolders();showAdmin(true);applyAdminTabOrder();
+  config=await response.json();normalizeConfig();const addedAssignedFolders=syncOverrideFolders(),firstPanel=config.adminTabOrder[0]||'folders';applyAdminTabOrder();openAdminPanel(firstPanel,false);showAdmin(true);
   try{const data=await(await fetch('/api/soundcloud/episodes')).json();episodes=Array.isArray(data)?data:(data.episodes||[]);invalidateDerived()}catch{}
-  openAdminPanel(config.adminTabOrder[0]||'folders');if(addedAssignedFolders)changed();
+  renderPanel(firstPanel);if(addedAssignedFolders)changed();
 }
 async function save(){
   clearTimeout(saveTimer);
