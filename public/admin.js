@@ -383,6 +383,12 @@ function renderPanel(panel){
   else if(panel==='theme')renderTheme();
   else if(panel==='analytics'){updateAnalyticsDateControls();loadAnalytics()}
 }
+function openAdminPanel(panel){
+  const tab=document.querySelector(`.tab[data-panel="${panel}"]`);if(!tab)return;
+  document.querySelectorAll('.tab').forEach(item=>item.classList.toggle('active',item===tab));
+  document.querySelectorAll('.panel').forEach(item=>item.classList.toggle('hidden',item.id!==`${panel}Panel`));
+  requestAnimationFrame(()=>renderPanel(panel));
+}
 function replacePathPrefix(oldPath,newPath){
   const replace=path=>path?.slice(0,oldPath.length).every((part,i)=>part===oldPath[i])?[...newPath,...path.slice(oldPath.length)]:path;
   config.moves.forEach(move=>move.parentPath=replace(move.parentPath));
@@ -398,7 +404,7 @@ async function load(){
   if(!response.ok){sessionStorage.removeItem('rjsAdminToken');token='';showAdmin(false);return}
   config=await response.json();normalizeConfig();const addedAssignedFolders=syncOverrideFolders();showAdmin(true);applyAdminTabOrder();
   try{const data=await(await fetch('/api/soundcloud/episodes')).json();episodes=Array.isArray(data)?data:(data.episodes||[]);invalidateDerived()}catch{}
-  renderPanel('folders');if(addedAssignedFolders)changed();
+  openAdminPanel(config.adminTabOrder[0]||'folders');if(addedAssignedFolders)changed();
 }
 async function save(){
   clearTimeout(saveTimer);
@@ -414,7 +420,7 @@ async function save(){
   }finally{saving=false}
 }
 
-document.querySelector('.tabs').onclick=event=>{if(!event.target.dataset.panel)return;document.querySelectorAll('.tab').forEach(tab=>tab.classList.toggle('active',tab===event.target));document.querySelectorAll('.panel').forEach(panel=>panel.classList.add('hidden'));$(`${event.target.dataset.panel}Panel`).classList.remove('hidden');requestAnimationFrame(()=>renderPanel(event.target.dataset.panel))};
+document.querySelector('.tabs').onclick=event=>{if(event.target.dataset.panel)openAdminPanel(event.target.dataset.panel)};
 $('themeChoices').onclick=event=>{const choice=event.target.closest('[data-theme]');if(!choice||choice.dataset.theme===config.theme)return;config.theme=choice.dataset.theme;changed();renderTheme()};
 $('showTodaysClasses').onchange=event=>{config.showTodaysClasses=event.target.checked;renderHomeSettings();changed();save()};
 $('adminTabOrder').onclick=event=>{
