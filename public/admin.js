@@ -3,9 +3,11 @@ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const cap=v=>String(v||'').trim().replace(/\b\w/g,c=>c.toUpperCase());
 const pathValue=path=>encodeURIComponent(JSON.stringify(path));
 const readPath=value=>{try{return JSON.parse(decodeURIComponent(value))}catch{return[]}};
-let token=sessionStorage.getItem('rjsAdminToken')||'',config={theme:'classic',showTodaysClasses:true,folderOrders:{},folders:[],rules:[],moves:[],hiddenFolders:[],hiddenPaths:[],pathTransforms:[],disabledBuiltInRules:[],builtInRuleEdits:{},overrides:{}},episodes=[],selected=null,dirty=false;
+const ADMIN_TABS=[['folders','Organize folders'],['rules','Filing rules'],['episodes','File a class'],['home','Home screen'],['theme','App colors'],['analytics','Analytics']];
+const ADMIN_TAB_IDS=ADMIN_TABS.map(([id])=>id);
+let token=sessionStorage.getItem('rjsAdminToken')||'',config={theme:'classic',showTodaysClasses:true,adminTabOrder:[...ADMIN_TAB_IDS],folderOrders:{},folders:[],rules:[],moves:[],hiddenFolders:[],hiddenPaths:[],pathTransforms:[],disabledBuiltInRules:[],builtInRuleEdits:{},overrides:{}},episodes=[],selected=null,dirty=false;
 let saveTimer=null,saving=false,changeRevision=0;
-let analyticsLoading=false,analyticsRangeLabel='Last 30 days';
+let analyticsLoading=false,analyticsRangeLabel='Today';
 let derivedCache={folderNames:new Map(),assignments:new Map(),currentFolders:null,unfiled:null,listeningPaths:null,destinationPaths:null};
 function invalidateDerived(){derivedCache={folderNames:new Map(),assignments:new Map(),currentFolders:null,unfiled:null,listeningPaths:null,destinationPaths:null}}
 const auth=()=>({'Content-Type':'application/json',Authorization:`Bearer ${token}`});
@@ -60,6 +62,9 @@ function normalizeTree(nodes=[]){return nodes.map(node=>({name:node.name,childre
 function normalizeConfig(){
   config.theme=APP_THEMES.some(theme=>theme.id===config.theme)?config.theme:'classic';
   config.showTodaysClasses=config.showTodaysClasses!==false;
+  const requestedTabs=Array.isArray(config.adminTabOrder)?config.adminTabOrder:[];
+  config.adminTabOrder=[...new Set(requestedTabs.filter(id=>ADMIN_TAB_IDS.includes(id)))];
+  ADMIN_TAB_IDS.forEach(id=>{if(!config.adminTabOrder.includes(id))config.adminTabOrder.push(id)});
   config.folderOrders=config.folderOrders&&typeof config.folderOrders==='object'?config.folderOrders:{};
   config.folders=normalizeTree(config.folders||[]);
   config.rules=(config.rules||[]).map(rule=>({...rule,path:rule.path?.length?rule.path:[rule.folder,rule.subfolder].filter(Boolean)}));
@@ -292,6 +297,18 @@ function renderTheme(){
 function renderHomeSettings(){
   $('showTodaysClasses').checked=config.showTodaysClasses!==false;
   $('todaysClassesSettingText').textContent=config.showTodaysClasses!==false?'Shown at the top of the home screen':'Hidden from the home screen';
+  renderAdminTabOrder();
+}
+function applyAdminTabOrder(){
+  const tabs=document.querySelector('.tabs');
+  config.adminTabOrder.forEach(id=>{const tab=tabs.querySelector(`[data-panel="${id}"]`);if(tab)tabs.appendChild(tab)});
+}
+function renderAdminTabOrder(){
+  applyAdminTabOrder();
+  $('adminTabOrder').innerHTML=config.adminTabOrder.map((id,index)=>{
+    const label=ADMIN_TABS.find(([tabId])=>tabId===id)?.[1]||id;
+    return `<div class="admin-tab-order-row"><span><b>${index+1}</b><strong>${esc(label)}</strong></span><div><button type="button" class="quiet" data-tab-up="${esc(id)}"${index===0?' disabled':''}>Move up</button><button type="button" class="quiet" data-tab-down="${esc(id)}"${index===config.adminTabOrder.length-1?' disabled':''}>Move down</button></div></div>`;
+  }).join('');
 }
 const analyticsNumber=value=>Number(value||0).toLocaleString();
 function analyticsDuration(seconds){
@@ -379,7 +396,7 @@ async function login(){
 async function load(){
   const response=await fetch('/api/admin/config',{headers:auth()});
   if(!response.ok){sessionStorage.removeItem('rjsAdminToken');token='';showAdmin(false);return}
-  config=await response.json();normalizeConfig();const addedAssignedFolders=syncOverrideFolders();showAdmin(true);
+  config=await response.json();normalizeConfig();const addedAssignedFolders=syncOverrideFolders();showAdmin(true);applyAdminTabOrder();
   try{const data=await(await fetch('/api/soundcloud/episodes')).json();episodes=Array.isArray(data)?data:(data.episodes||[]);invalidateDerived()}catch{}
   renderPanel('folders');if(addedAssignedFolders)changed();
 }
@@ -400,6 +417,13 @@ async function save(){
 document.querySelector('.tabs').onclick=event=>{if(!event.target.dataset.panel)return;document.querySelectorAll('.tab').forEach(tab=>tab.classList.toggle('active',tab===event.target));document.querySelectorAll('.panel').forEach(panel=>panel.classList.add('hidden'));$(`${event.target.dataset.panel}Panel`).classList.remove('hidden');requestAnimationFrame(()=>renderPanel(event.target.dataset.panel))};
 $('themeChoices').onclick=event=>{const choice=event.target.closest('[data-theme]');if(!choice||choice.dataset.theme===config.theme)return;config.theme=choice.dataset.theme;changed();renderTheme()};
 $('showTodaysClasses').onchange=event=>{config.showTodaysClasses=event.target.checked;renderHomeSettings();changed();save()};
+$('adminTabOrder').onclick=event=>{
+  const button=event.target.closest('[data-tab-up],[data-tab-down]');if(!button)return;
+  const id=button.dataset.tabUp||button.dataset.tabDown,index=config.adminTabOrder.indexOf(id),direction=button.dataset.tabUp?-1:1,target=index+direction;
+  if(index<0||target<0||target>=config.adminTabOrder.length)return;
+  [config.adminTabOrder[index],config.adminTabOrder[target]]=[config.adminTabOrder[target],config.adminTabOrder[index]];
+  renderAdminTabOrder();changed();save();
+};
 $('refreshAnalytics').onclick=loadAnalytics;
 $('analyticsDays').onchange=()=>{updateAnalyticsDateControls();loadAnalytics()};
 $('analyticsFrom').onchange=()=>{if($('analyticsDays').value==='custom')loadAnalytics()};

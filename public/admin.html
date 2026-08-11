@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>RJS Torah Admin</title>
-  <link rel="stylesheet" href="/admin.css?v=99">
+  <link rel="stylesheet" href="/admin.css?v=100">
 </head>
 <body>
   <main class="shell">
@@ -86,6 +86,11 @@
           </label>
           <p class="sub setting-note">Turning this off only hides the special Today’s Classes section. New episodes still appear in their correct folders and remain searchable.</p>
         </div>
+        <div class="card">
+          <h2>Admin tab order</h2>
+          <p class="sub">Choose the order of the tabs across the top of this admin page. Changes save automatically.</p>
+          <div id="adminTabOrder" class="admin-tab-order"></div>
+        </div>
       </section>
       <section id="themePanel" class="panel hidden">
         <div class="section-intro">
@@ -101,7 +106,7 @@
         <div class="section-intro analytics-heading">
           <div><p class="eyebrow">Anonymous usage</p><h2>App analytics</h2><p class="sub">Private totals from the listening app. No names, email addresses, IP addresses, exact locations, or search words are collected.</p></div>
           <div class="analytics-filters">
-            <label>Time period<select id="analyticsDays"><option value="today">Today</option><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="all">All time</option><option value="custom">Custom date range</option></select></label>
+            <label>Time period<select id="analyticsDays"><option value="today" selected>Today</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="365">Last year</option><option value="all">All time</option><option value="custom">Custom date range</option></select></label>
             <div id="analyticsCustomRange" class="analytics-custom-range hidden"><label>Start date<input id="analyticsFrom" type="date"></label><label>End date<input id="analyticsTo" type="date"></label></div>
             <button id="refreshAnalytics" type="button">Refresh</button>
           </div>
@@ -121,6 +126,6 @@
       <div class="savebar"><span id="saveMessage">Changes save automatically.</span><button id="saveAll">Save now</button></div>
     </div>
   </main>
-  <script src="/admin.js?v=99"></script>
+  <script src="/admin.js?v=100"></script>
 </body>
 </html>
