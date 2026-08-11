@@ -1,6 +1,6 @@
-const CACHE='rabbi-joey-soffer-shiurim-v100';
+const CACHE='rabbi-joey-soffer-shiurim-v101';
 const AUDIO_CACHE='js-torah-downloads-v1';
-const SHELL=['/','/index.html','/styles.css?v=100','/app.js?v=100','/vendor/hls.mjs?v=1.6.16','/manifest.webmanifest?theme=classic&v=100','/icon-theme-classic-512.png?v=100','/icon-theme-navy-gold-512.png?v=100','/icon-theme-forest-512.png?v=100','/icon-theme-burgundy-512.png?v=100','/icon-theme-blue-512.png?v=100','/icon-theme-purple-512.png?v=100','/icon-theme-teal-512.png?v=100','/icon-theme-rose-512.png?v=100','/icon-theme-slate-512.png?v=100','/icon-theme-sunset-512.png?v=100'];
+const SHELL=['/','/index.html','/styles.css?v=101','/app.js?v=101','/vendor/hls.mjs?v=1.6.16','/manifest.webmanifest?theme=classic&v=101','/icon-theme-classic-512.png?v=101','/icon-theme-navy-gold-512.png?v=101','/icon-theme-forest-512.png?v=101','/icon-theme-burgundy-512.png?v=101','/icon-theme-blue-512.png?v=101','/icon-theme-purple-512.png?v=101','/icon-theme-teal-512.png?v=101','/icon-theme-rose-512.png?v=101','/icon-theme-slate-512.png?v=101','/icon-theme-sunset-512.png?v=101'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('rabbi-joey-soffer-shiurim-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{
