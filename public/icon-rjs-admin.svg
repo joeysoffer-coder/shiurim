@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="RJS Admin">
+  <rect width="512" height="512" rx="112" fill="#151b17"/>
+  <circle cx="256" cy="224" r="169" fill="#dc5b32"/>
+  <circle cx="256" cy="224" r="169" fill="none" stroke="#fff8ec" stroke-opacity=".12" stroke-width="5"/>
+  <text x="256" y="270" text-anchor="middle" fill="#fff8ec" font-family="Georgia,serif" font-size="126" font-style="italic" font-weight="700" letter-spacing="-7">RJS</text>
+  <rect x="96" y="365" width="320" height="92" rx="46" fill="#286844" stroke="#fff8ec" stroke-width="9"/>
+  <text x="256" y="425" text-anchor="middle" fill="#ffffff" font-family="Arial,sans-serif" font-size="39" font-weight="800" letter-spacing="8">ADMIN</text>
+</svg>
