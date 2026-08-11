@@ -208,7 +208,7 @@ function sendManifest(res, themeId, theme) {
   }));
 }
 
-const emptyLibraryConfig = () => ({ theme:'classic', showTodaysClasses:true, folderOrders:{}, folders:[], rules:[], moves:[], hiddenFolders:[], hiddenPaths:[], pathTransforms:[], disabledBuiltInRules:[], builtInRuleEdits:{}, overrides:{} });
+const emptyLibraryConfig = () => ({ theme:'classic', showTodaysClasses:true, adminTabOrder:['folders','rules','episodes','home','theme','analytics'], folderOrders:{}, folders:[], rules:[], moves:[], hiddenFolders:[], hiddenPaths:[], pathTransforms:[], disabledBuiltInRules:[], builtInRuleEdits:{}, overrides:{} });
 
 async function readJsonBody(req) {
   const chunks = [];
@@ -371,6 +371,9 @@ function sanitizeLibraryConfig(value) {
   const allowedThemes = new Set(Object.keys(APP_THEME_META));
   const theme = allowedThemes.has(value?.theme) ? value.theme : 'classic';
   const showTodaysClasses = value?.showTodaysClasses !== false;
+  const allowedAdminTabs=['folders','rules','episodes','home','theme','analytics'];
+  const adminTabOrder=[...new Set((Array.isArray(value?.adminTabOrder)?value.adminTabOrder:[]).map(id=>String(id||'')).filter(id=>allowedAdminTabs.includes(id)))];
+  allowedAdminTabs.forEach(id=>{if(!adminTabOrder.includes(id))adminTabOrder.push(id)});
   const cleanNode = folder => {
     const name = String(folder?.name || '').trim().slice(0, 120);
     const legacyChildren = Array.isArray(folder?.subfolders) ? folder.subfolders.map(child => ({ name:child })) : [];
@@ -432,7 +435,7 @@ function sanitizeLibraryConfig(value) {
     });
   }
   repairBusinessHalachaPlacement(moves);
-  return { theme, showTodaysClasses, folderOrders, folders, rules, moves, hiddenFolders, hiddenPaths, pathTransforms, disabledBuiltInRules, builtInRuleEdits, overrides };
+  return { theme, showTodaysClasses, adminTabOrder, folderOrders, folders, rules, moves, hiddenFolders, hiddenPaths, pathTransforms, disabledBuiltInRules, builtInRuleEdits, overrides };
 }
 
 function repairBusinessHalachaPlacement(moves) {
