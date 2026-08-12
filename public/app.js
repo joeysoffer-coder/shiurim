@@ -59,6 +59,30 @@ const filenameSortKey=name=>name.replace(/^\d+-joey-soffer-\d+-/i,'').replace(/^
 const DOWNLOAD_CACHE='js-torah-downloads-v1';
 const offlineUrl=id=>`/offline/audio/${encodeURIComponent(id)}`;
 const trackIdFor=e=>String(e.id||'').match(/tracks\/(\d+)/)?.[1]||String(e.audioUrl||'').match(/[?&]id=(\d+)/)?.[1]||'';
+function catalogDurationSeconds(episode){
+  if(Number.isFinite(Number(episode?.duration)))return Number(episode.duration);
+  const parts=String(episode?.duration||'').split(':').map(Number);
+  if(parts.some(part=>!Number.isFinite(part)))return 0;
+  return parts.reduce((total,part)=>total*60+part,0);
+}
+function isUnexpectedPreviewDuration(episode,duration=audio.duration){
+  if(!episode||state.downloaded.has(episode.id)||!Number.isFinite(duration)||duration<=0)return false;
+  const expected=catalogDurationSeconds(episode);
+  return expected>=120&&duration<=90&&duration<expected*.35;
+}
+function repairPreviewProgress(episodes=state.episodes){
+  let repaired=0;
+  for(const episode of episodes){
+    const expected=catalogDurationSeconds(episode),position=state.positions[episode.id];
+    if(!position||expected<120||!Number.isFinite(Number(position.duration)))continue;
+    const savedDuration=Number(position.duration),savedTime=Number(position.time||0);
+    if(savedDuration<=90&&savedDuration<expected*.35&&savedTime>=savedDuration*.9){
+      state.positions[episode.id]={time:Math.min(savedTime,Math.max(0,expected-2)),duration:expected};
+      repaired+=1;
+    }
+  }
+  return repaired;
+}
 async function toggleDownload(id,button){const episode=state.episodes.find(e=>e.id===id);if(!episode||!('caches'in window)){setStatus('Offline downloads are not supported on this device.');return}button.disabled=true;try{const cache=await caches.open(DOWNLOAD_CACHE),key=offlineUrl(id);if(state.downloaded.has(id)){await cache.delete(key);state.downloaded.delete(id);trackAnalytics('download_remove',analyticsEpisode(episode));setStatus('Download removed from this device.')}else{const trackId=trackIdFor(episode);if(!trackId)throw new Error('This episode cannot be downloaded');setStatus(`Downloading ${episode.title}…`);const response=await fetch(`/api/soundcloud/download?id=${trackId}`);if(!response.ok)throw new Error(await response.text());await cache.put(key,response);state.downloaded.add(id);trackAnalytics('download',analyticsEpisode(episode));setStatus('Episode downloaded for offline listening.')}save();render()}catch(error){setStatus(`Download failed: ${error.message}`)}finally{button.disabled=false}}
 function parseFeed(xml,feedUrl){const doc=new DOMParser().parseFromString(xml,'application/xml');if(doc.querySelector('parsererror'))throw new Error('That feed could not be read.');const channel=doc.querySelector('channel');const show=text(channel,'title');const showArt=channel.querySelector('image url')?.textContent||channel.querySelector('itunes\\:image')?.getAttribute('href')||'';return [...doc.querySelectorAll('item')].map((item,i)=>{const enc=item.querySelector('enclosure');const url=enc?.getAttribute('url')||'';const guid=text(item,'guid')||url||`${feedUrl}-${i}`;return{id:guid,title:text(item,'title')||'Untitled episode',show,date:text(item,'pubDate'),audioUrl:url,fileName:filename(url),duration:text(item,'itunes\\:duration'),art:item.querySelector('itunes\\:image')?.getAttribute('href')||showArt,feedUrl};}).filter(e=>e.audioUrl)}
 async function refresh(force=false){
@@ -96,8 +120,9 @@ async function refresh(force=false){
       rssEpisodes.forEach(episode=>previous.set(String(episode.id),{...previous.get(String(episode.id)),...episode}));
       state.episodes=[...previous.values()];
     }
+    const repairedCount=repairPreviewProgress(state.episodes);
     save();render();
-    setStatus(`${apiWorked?'Complete SoundCloud catalog':'RSS fallback (SoundCloud API unavailable)'} · ${state.episodes.length} episodes${removedCount?` · removed ${removedCount} deleted`:''} · v9`);
+    setStatus(`${apiWorked?'Complete SoundCloud catalog':'RSS fallback (SoundCloud API unavailable)'} · ${state.episodes.length} episodes${removedCount?` · removed ${removedCount} deleted`:''}${repairedCount?` · repaired ${repairedCount} preview position${repairedCount===1?'':'s'}`:''} · v103`);
   }catch(e){setStatus(`Couldn’t refresh: ${e.message} · v9`);render()}
   finally{$('#refreshBtn').disabled=false}
 }
@@ -161,8 +186,8 @@ function searchableFolderPaths(){
 function searchFolders(query){return searchableFolderPaths().map(path=>({path,score:episodeSearchScore({title:path.join(' '),show:'',fileName:''},query)})).filter(item=>item.score>0).sort((a,b)=>b.score-a.score||collator.compare(a.path.join(' '),b.path.join(' '))).map(item=>item.path)}
 function episodeHTML(e,i){const p=state.positions[e.id]||{},pct=p.duration?Math.min(100,p.time/p.duration*100):0,played=pct>95,downloaded=state.downloaded.has(e.id),durationLabel=typeof e.duration==='number'?clock(e.duration):e.duration;return `<article class="episode" data-id="${esc(e.id)}"><span class="episode-number">${String(i+1).padStart(2,'0')}</span>${e.art?`<img class="art" src="${esc(e.art)}" alt="">`:'<div class="art"></div>'}<div><h3>${esc(e.title)}</h3><div class="meta">${esc(e.show)} · ${formatDate(e.date)}${durationLabel?' · '+esc(durationLabel):''}</div><div class="filename" title="${esc(e.fileName)}">${esc(e.fileName)}</div></div><div class="episode-state"><span class="availability ${downloaded?'is-downloaded':''}">${downloaded?'DOWNLOADED':'ONLINE'}</span><span class="played">${played?'PLAYED':pct?'<i class="dot"></i>IN PROGRESS':'UNPLAYED'}</span><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><button class="download-btn" type="button" data-download="${esc(e.id)}">${downloaded?'Remove download':'Download'}</button></div></article>`}
 function render(){const q=$('#searchInput').value.trim().toLocaleLowerCase(),groups=libraryGroups();if(q){const results=sortEpisodes(state.episodes.filter(e=>`${e.title} ${e.show} ${e.fileName}`.toLocaleLowerCase().includes(q)));$('#libraryTitle').textContent='Search results';$('#episodeCount').textContent=`${results.length} episode${results.length===1?'':'s'} across entire catalog`;list.innerHTML=results.length?results.map(episodeHTML).join(''):'<div class="empty">No episodes match your search.</div>';return}if(activeFolder){const folder=groups.folders.find(f=>f.name===activeFolder);if(!folder){activeFolder=null;return render()}const eps=sortEpisodes(folder.episodes);$('#libraryTitle').textContent=folder.name;$('#episodeCount').textContent=`${eps.length} episode${eps.length===1?'':'s'}`;list.innerHTML=`<button class="back-library" type="button" data-back>← All folders</button>${eps.length?eps.map(episodeHTML).join(''):'<div class="empty">This folder is empty.</div>'}`;return}$('#libraryTitle').textContent='Shiurim library';const folders=sortFolders(groups.folders),unique=sortEpisodes(groups.unique);$('#episodeCount').textContent=`${folders.length} folder${folders.length===1?'':'s'} · ${unique.length} individual · ${state.episodes.length} total episodes`;const folderHTML=folders.length?`<div class="folder-grid">${folders.map(f=>{const newest=[...f.episodes].sort((a,b)=>new Date(b.date)-new Date(a.date))[0];return `<button class="folder-card" type="button" data-folder="${esc(f.name)}"><span class="folder-icon">▰</span><strong>${esc(f.name)}</strong><span>${f.episodes.length} episodes</span>${newest?`<small>Latest: ${formatDate(newest.date)}</small>`:'<small>Empty folder</small>'}</button>`}).join('')}</div>`:'';const uniqueHTML=unique.length?`<h3 class="section-label">Individual episodes</h3>${unique.map(episodeHTML).join('')}`:'';list.innerHTML=folderHTML+uniqueHTML||'<div class="empty">No episodes are available.</div>'}
-function playEpisode(id,autoplay=true){const e=state.episodes.find(x=>x.id===id);if(!e)return;if(state.current?.id===id){if(autoplay)audio.play().catch(()=>setStatus('Press play to start listening.'));return}state.current=e;if(hlsPlayer){hlsPlayer.destroy();hlsPlayer=null}audio.removeAttribute('src');audio.load();$('#playerTitle').textContent=e.title;$('#playerShow').textContent=e.show;$('#playerArt').innerHTML=e.art?`<img src="${esc(e.art)}" alt="">`:'JS';$('#playerArt').querySelector('img')?.setAttribute('style','width:100%;height:100%;object-fit:cover');localStorage.setItem('wavecast.last',id);const resume=()=>{const saved=state.positions[id]?.time||0;if(saved&&isFinite(audio.duration))audio.currentTime=saved>=audio.duration*.95?0:Math.min(saved,Math.max(0,audio.duration-2));if(autoplay)audio.play().catch(()=>setStatus('Press play to start listening.'))};const playUrl=state.downloaded.has(id)?offlineUrl(id):e.audioUrl,isApiStream=playUrl.startsWith('/api/soundcloud/stream');if(isApiStream&&window.Hls?.isSupported()){hlsPlayer=new window.Hls({enableWorker:true});hlsPlayer.attachMedia(audio);hlsPlayer.on(window.Hls.Events.MEDIA_ATTACHED,()=>hlsPlayer.loadSource(playUrl));hlsPlayer.on(window.Hls.Events.MANIFEST_PARSED,resume);hlsPlayer.on(window.Hls.Events.ERROR,(_,data)=>{if(!data.fatal)return;if(data.type===window.Hls.ErrorTypes.NETWORK_ERROR)hlsPlayer.startLoad();else if(data.type===window.Hls.ErrorTypes.MEDIA_ERROR)hlsPlayer.recoverMediaError();else{hlsPlayer.destroy();hlsPlayer=null;setStatus('This older episode could not be played.')}})}else{audio.src=playUrl;audio.addEventListener('loadedmetadata',resume,{once:true})}}
-function setStatus(s){$('#status').textContent=s.replace(/v\d+/g,'v102')} function esc(s=''){return String(s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))} function formatDate(d){const x=new Date(d);return isNaN(x)?'Unknown date':x.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})} function clock(s){if(!isFinite(s))return'0:00';return`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`}
+function playEpisode(id,autoplay=true){const e=state.episodes.find(x=>x.id===id);if(!e)return;if(state.current?.id===id){if(autoplay)audio.play().catch(()=>setStatus('Press play to start listening.'));return}state.current=e;if(hlsPlayer){hlsPlayer.destroy();hlsPlayer=null}audio.removeAttribute('src');audio.load();$('#playerTitle').textContent=e.title;$('#playerShow').textContent=e.show;$('#playerArt').innerHTML=e.art?`<img src="${esc(e.art)}" alt="">`:'JS';$('#playerArt').querySelector('img')?.setAttribute('style','width:100%;height:100%;object-fit:cover');localStorage.setItem('wavecast.last',id);const resume=()=>{const saved=state.positions[id]?.time||0;if(saved&&isFinite(audio.duration))audio.currentTime=saved>=audio.duration*.95?0:Math.min(saved,Math.max(0,audio.duration-2));if(autoplay)audio.play().catch(()=>setStatus('Press play to start listening.'))};const trackId=trackIdFor(e),playUrl=state.downloaded.has(id)?offlineUrl(id):trackId?`/api/soundcloud/stream?id=${trackId}`:e.audioUrl,isApiStream=playUrl.startsWith('/api/soundcloud/stream');if(isApiStream&&window.Hls?.isSupported()){hlsPlayer=new window.Hls({enableWorker:true});hlsPlayer.attachMedia(audio);hlsPlayer.on(window.Hls.Events.MEDIA_ATTACHED,()=>hlsPlayer.loadSource(playUrl));hlsPlayer.on(window.Hls.Events.MANIFEST_PARSED,resume);hlsPlayer.on(window.Hls.Events.ERROR,(_,data)=>{if(!data.fatal)return;if(data.type===window.Hls.ErrorTypes.NETWORK_ERROR)hlsPlayer.startLoad();else if(data.type===window.Hls.ErrorTypes.MEDIA_ERROR)hlsPlayer.recoverMediaError();else{hlsPlayer.destroy();hlsPlayer=null;setStatus('This older episode could not be played.')}})}else{audio.src=playUrl;audio.addEventListener('loadedmetadata',resume,{once:true})}}
+function setStatus(s){$('#status').textContent=s.replace(/v\d+/g,'v103')} function esc(s=''){return String(s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))} function formatDate(d){const x=new Date(d);return isNaN(x)?'Unknown date':x.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})} function clock(s){if(!isFinite(s))return'0:00';return`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`}
 history.replaceState({view:'home'},'');
 list.addEventListener('click',event=>{const download=event.target.closest('[data-download]'),folder=event.target.closest('[data-folder]'),back=event.target.closest('[data-back]');if(download){event.preventDefault();event.stopImmediatePropagation();toggleDownload(download.dataset.download,download);return}if(folder){history.pushState({view:'folder',folder:folder.dataset.folder},'');return}if(back){event.preventDefault();event.stopImmediatePropagation();history.back()}},true);
 $('#searchInput').addEventListener('input',event=>{const query=event.target.value;if(query){if(history.state?.view!=='search')history.pushState({view:'search',query},'');else history.replaceState({...history.state,query},'')}else if(history.state?.view==='search')history.back()});
@@ -388,6 +413,25 @@ window.setInterval(()=>{if(document.visibilityState==='visible')loadManagedConfi
 let playbackQueue=[];
 try{playbackQueue=JSON.parse(localStorage.getItem('rjs.playbackQueue')||'[]')}catch{}
 let backgroundHandoffFrom='',ignoreEndedUntil=0;
+const previewRecoveryIds=new Set();
+function recoverUnexpectedPreview(){
+  const episode=state.current;
+  if(!isUnexpectedPreviewDuration(episode))return false;
+  const id=String(episode.id),trackId=trackIdFor(episode),expected=catalogDurationSeconds(episode);
+  if(!trackId||previewRecoveryIds.has(id)){
+    setStatus('SoundCloud supplied a short preview instead of the full episode. Refresh feeds and try again.');
+    return true;
+  }
+  previewRecoveryIds.add(id);
+  const resumeAt=Math.max(0,Math.min(Number(audio.currentTime)||0,expected-2));
+  state.positions[id]={time:resumeAt,duration:expected};
+  episode.audioUrl=`/api/soundcloud/stream?id=${trackId}`;
+  save();render();
+  state.current=null;
+  setStatus('Switching from SoundCloud’s short preview to the full episode…');
+  playEpisode(id,true);
+  return true;
+}
 function capturePlaybackQueue(){
   playbackQueue=[...list.querySelectorAll('.episode[data-id]')].map(row=>row.dataset.id).filter(Boolean);
   localStorage.setItem('rjs.playbackQueue',JSON.stringify(playbackQueue));
@@ -413,6 +457,7 @@ list.addEventListener('click',event=>{
 audio.addEventListener('ended',()=>{
   if(Date.now()<ignoreEndedUntil)return;
   if(!state.current)return;
+  if(recoverUnexpectedPreview())return;
   flushListeningAnalytics();trackAnalytics('episode_complete',analyticsEpisode(state.current));
   const completedId=state.current.id;
   state.positions[completedId]={time:Number.isFinite(audio.duration)?audio.duration:audio.currentTime,duration:Number.isFinite(audio.duration)?audio.duration:(state.positions[completedId]?.duration||0)};
@@ -426,6 +471,7 @@ audio.addEventListener('timeupdate',()=>{
   if(document.visibilityState!=='hidden'||!state.current||!Number.isFinite(audio.duration))return;
   const remaining=audio.duration-audio.currentTime,currentId=String(state.current.id);
   if(remaining<=0||remaining>1.5||backgroundHandoffFrom===currentId)return;
+  if(recoverUnexpectedPreview())return;
   const nextId=nextPlaybackId(currentId);
   if(!nextId||nextId===currentId)return;
   backgroundHandoffFrom=currentId;
