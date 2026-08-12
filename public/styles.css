@@ -130,6 +130,7 @@ h1{font-size:clamp(44px,6.4vw,78px);line-height:.91;letter-spacing:-3.5px;margin
 .buttons button:hover{background:rgba(255,255,255,.08)}
 .buttons button:active{transform:scale(.93)}
 .buttons .play{width:46px;height:46px;margin:0 12px;box-shadow:0 5px 16px rgba(0,0,0,.22)}
+.buttons .play:hover,.buttons .play:focus,.buttons .play:focus-visible,.buttons .play:active{background:var(--paper);color:var(--ink)}
 .timeline{grid-template-columns:38px minmax(80px,1fr) 38px;gap:7px;font-variant-numeric:tabular-nums}
 .timeline input{height:22px}
 .speed{padding:0;border:0;border-radius:0;color:color-mix(in srgb,var(--paper) 72%,var(--ink));font-size:8px;font-weight:900;letter-spacing:1.2px}
