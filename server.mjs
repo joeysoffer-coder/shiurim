@@ -94,8 +94,7 @@ const server = http.createServer(async (req, res) => {
           || data.hls_mp3_128_url
           || data.hls_opus_64_url
           || Object.entries(data).find(([key, value]) => key.startsWith('hls_') && key.endsWith('_url') && typeof value === 'string')?.[1]
-          || data.http_mp3_128_url
-          || data.preview_mp3_128_url;
+          || data.http_mp3_128_url;
         if (location) {
           const protectedStream = new URL(location).hostname === 'api.soundcloud.com';
           if (!protectedStream) {
@@ -125,7 +124,7 @@ const server = http.createServer(async (req, res) => {
       const stream = await fetch(`https://api.soundcloud.com/tracks/${id}/streams`, { headers:authHeaders(token), signal:AbortSignal.timeout(15000) });
       if (!stream.ok) return send(res, stream.status || 502, 'Unable to open audio stream');
       const data = await stream.json();
-      const location = data.http_mp3_128_url || data.preview_mp3_128_url;
+      const location = data.http_mp3_128_url;
       if (!location) return send(res, 409, 'Progressive audio is unavailable');
       if (new URL(location).hostname !== 'api.soundcloud.com') {
         res.writeHead(302, { location, 'cache-control':'no-store' });
@@ -526,7 +525,7 @@ async function getSoundcloudEpisodes(forceRefresh = false) {
     title:track.title || 'Untitled episode',
     show:'Rabbi Joey Soffer Shiurim',
     date:track.created_at,
-    audioUrl:`/api/soundcloud/progressive?id=${track.id}`,
+    audioUrl:`/api/soundcloud/stream?id=${track.id}`,
     fileName:`${track.title || `episode-${track.id}`}.${track.original_format || 'mp3'}`,
     duration:track.duration ? Math.round(track.duration / 1000) : '',
     art:track.artwork_url || track.user?.avatar_url || '',
