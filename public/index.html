@@ -5,12 +5,12 @@
   <meta name="theme-color" content="#17140f"><meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="RJS Torah">
   <title>Rabbi Joey Soffer Shiurim</title><link rel="manifest" href="/manifest.webmanifest?theme=classic&amp;v=102"><link rel="apple-touch-icon" href="/icon-theme-classic-512.png?v=102">
-  <link rel="stylesheet" href="styles.css?v=104">
+  <link rel="stylesheet" href="styles.css?v=105">
 </head>
 <body>
   <header class="topbar">
     <div class="brand-group"><a class="brand" href="#" aria-label="Rabbi Joey Soffer Shiurim home"><img class="brand-mark" src="/icon-theme-classic-512.png?v=102" alt="RJS Torah"><span>RABBI JOEY SOFFER SHIURIM</span></a><button id="shareAppBtn" class="ghost-btn" type="button" hidden>Share app</button></div>
-    <div class="top-actions"><button id="installBtn" class="ghost-btn" type="button" hidden>Download app</button><a class="contact-rabbi" href="mailto:joeysoffer@gmail.com?subject=Message%20from%20RJS%20Torah%20app" aria-label="Email Rabbi Joey Soffer">Contact Rabbi Joey</a><button id="helpBtn" class="ghost-btn" type="button"><span aria-hidden="true">?</span> Help</button><button id="refreshBtn" class="ghost-btn" type="button"><span aria-hidden="true">↻</span> Refresh feeds</button></div>
+    <div class="top-actions"><button id="installBtn" class="ghost-btn" type="button" hidden>Download app</button><a id="contactRabbiBtn" class="contact-rabbi" href="mailto:joeysoffer@gmail.com?subject=Message%20from%20RJS%20Torah%20app" aria-label="Email Rabbi Joey Soffer">Contact Rabbi Joey</a><button id="helpBtn" class="ghost-btn" type="button"><span aria-hidden="true">?</span> Help</button><button id="refreshBtn" class="ghost-btn" type="button"><span aria-hidden="true">↻</span> Refresh feeds</button></div>
   </header>
   <main>
     <section class="hero">
@@ -50,6 +50,21 @@
   </aside>
   <audio id="audio" preload="metadata"></audio>
   <div id="installHelp" class="install-help" hidden><strong>Install Rabbi Joey Soffer Shiurim</strong><p id="installHelpText"></p><button id="closeInstallHelp" type="button">Got it</button></div>
+  <div id="contactDialog" class="contact-dialog-backdrop" hidden>
+    <section class="contact-dialog" role="dialog" aria-modal="true" aria-labelledby="contactDialogTitle">
+      <button id="contactDialogClose" class="contact-dialog-close" type="button" aria-label="Close contact options">×</button>
+      <span class="contact-dialog-kicker">CONTACT</span>
+      <h2 id="contactDialogTitle">Email Rabbi Joey</h2>
+      <p>Choose how you would like to send your message.</p>
+      <div class="contact-dialog-actions">
+        <a id="contactGmail" target="_blank" rel="noopener">Open Gmail</a>
+        <a id="contactOutlook" target="_blank" rel="noopener">Open Outlook</a>
+        <a id="contactDefaultEmail">Computer email app</a>
+        <button id="contactCopyEmail" type="button">Copy email address</button>
+      </div>
+      <strong class="contact-email-address">joeysoffer@gmail.com</strong>
+    </section>
+  </div>
   <div id="helpTour" class="help-tour guided-tour" hidden>
     <div class="guided-blocker" aria-hidden="true"></div>
     <div id="helpSpotlight" class="guided-spotlight" aria-hidden="true"></div>
@@ -62,5 +77,5 @@
       <footer class="guided-foot"><button id="helpBack" class="help-nav" type="button">Back</button><span>Swipe for more</span><button id="helpNext" class="help-nav" type="button">Next</button></footer>
     </section>
   </div>
-  <script type="module" src="app.js?v=104"></script>
+  <script type="module" src="app.js?v=105"></script>
 </body></html>

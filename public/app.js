@@ -3,7 +3,7 @@ window.Hls = Hls;
 document.documentElement.dataset.hls = Hls?.isSupported?.() ? 'supported' : 'native';
 
 const DEFAULT_FEED='https://feeds.soundcloud.com/users/soundcloud:users:1044681742/sounds.rss';
-const APP_VERSION='104';
+const APP_VERSION='105';
 const $=s=>document.querySelector(s); const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
 const state={feeds:JSON.parse(localStorage.getItem('wavecast.feeds')||JSON.stringify([DEFAULT_FEED])),episodes:JSON.parse(localStorage.getItem('wavecast.episodes')||'[]'),positions:JSON.parse(localStorage.getItem('wavecast.positions')||'{}'),downloaded:new Set(JSON.parse(localStorage.getItem('wavecast.downloaded')||'[]')),current:null};
 let filingRuleConfig={disabledBuiltInRules:[],builtInRuleEdits:{}};
@@ -838,6 +838,23 @@ function scrollToLibraryTop(){
 document.addEventListener('click',event=>{
   if(event.target.closest('[data-folder],[data-back],[data-daf-folder],[data-daf-back],[data-rashi-folder],[data-rashi-back],[data-hok-folder],[data-hok-back]'))window.setTimeout(scrollToLibraryTop,0);
 },true);
+
+// v105: desktop browsers may not have a mailto handler, so offer dependable webmail choices.
+const CONTACT_EMAIL='joeysoffer@gmail.com',CONTACT_SUBJECT='Message from RJS Torah app';
+const contactDialog=$('#contactDialog'),contactRabbiBtn=$('#contactRabbiBtn');
+const contactMailto=`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(CONTACT_SUBJECT)}`;
+$('#contactGmail').href=`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(CONTACT_EMAIL)}&su=${encodeURIComponent(CONTACT_SUBJECT)}`;
+$('#contactOutlook').href=`https://outlook.live.com/mail/0/deeplink/compose?to=${encodeURIComponent(CONTACT_EMAIL)}&subject=${encodeURIComponent(CONTACT_SUBJECT)}`;
+$('#contactDefaultEmail').href=contactMailto;
+function isPhoneContact(){return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)||matchMedia('(max-width:760px) and (pointer:coarse)').matches}
+function closeContactDialog(){contactDialog.hidden=true;contactRabbiBtn.focus()}
+contactRabbiBtn.addEventListener('click',event=>{if(isPhoneContact())return;event.preventDefault();contactDialog.hidden=false;$('#contactDialogClose').focus()});
+$('#contactDialogClose').addEventListener('click',closeContactDialog);
+$('#contactCopyEmail').addEventListener('click',async()=>{
+  try{await navigator.clipboard.writeText(CONTACT_EMAIL)}catch{const input=document.createElement('textarea');input.value=CONTACT_EMAIL;document.body.append(input);input.select();document.execCommand('copy');input.remove()}
+  $('#contactCopyEmail').textContent='Copied!';setStatus(`Email address copied · v${APP_VERSION}`);setTimeout(()=>$('#contactCopyEmail').textContent='Copy email address',1600);
+});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!contactDialog.hidden)closeContactDialog()});
 window.addEventListener('popstate',()=>window.setTimeout(scrollToLibraryTop,0));
 render();
 
