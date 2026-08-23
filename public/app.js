@@ -3,7 +3,7 @@ window.Hls = Hls;
 document.documentElement.dataset.hls = Hls?.isSupported?.() ? 'supported' : 'native';
 
 const DEFAULT_FEED='https://feeds.soundcloud.com/users/soundcloud:users:1044681742/sounds.rss';
-const APP_VERSION='105';
+const APP_VERSION='106';
 const $=s=>document.querySelector(s); const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
 const state={feeds:JSON.parse(localStorage.getItem('wavecast.feeds')||JSON.stringify([DEFAULT_FEED])),episodes:JSON.parse(localStorage.getItem('wavecast.episodes')||'[]'),positions:JSON.parse(localStorage.getItem('wavecast.positions')||'{}'),downloaded:new Set(JSON.parse(localStorage.getItem('wavecast.downloaded')||'[]')),current:null};
 let filingRuleConfig={disabledBuiltInRules:[],builtInRuleEdits:{}};
@@ -604,10 +604,17 @@ if(sharedEpisodeId){
     if(!episode&&sharedEpisodeAttempts++<30)return;
     window.clearInterval(openSharedEpisode);
     if(!episode)return setStatus('That shared episode could not be found.');
-    $('#searchInput').value=episode.title;
-    history.replaceState({view:'search',query:episode.title},'');
+    $('#searchInput').value='';
+    activeFolder=null;
+    activeDafFolder=null;
+    activeRashiFolder=null;
+    activeHokFolder=null;
+    activeManagedPath=[];
+    activeManagedSubfolder=null;
+    history.replaceState({view:'home'},'',`${location.pathname}${location.hash}`);
     render();
     playEpisode(episode.id,false);
+    window.scrollTo({top:0,left:0,behavior:'instant'});
   },500);
 }
 render();
