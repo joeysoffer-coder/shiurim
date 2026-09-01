@@ -2,6 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { Readable } from 'node:stream';
+import { once } from 'node:events';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const port = Number(process.env.PORT || 4173);
@@ -145,12 +146,28 @@ const server = http.createServer(async (req, res) => {
       const stream = await fetch(`https://api.soundcloud.com/tracks/${id}/streams`, { headers:authHeaders(token), signal:AbortSignal.timeout(15000) });
       if (!stream.ok) return send(res, stream.status, 'Unable to prepare download');
       const data = await stream.json();
-      const location = data.http_mp3_128_url;
-      if (!location) return send(res, 409, 'This episode is not available for offline download');
+      const progressiveLocation = data.http_mp3_128_url;
+      const hlsLocation = data.hls_mp3_128_url
+        || data.hls_aac_160_url
+        || data.hls_aac_96_url
+        || data.hls_opus_64_url
+        || Object.entries(data).find(([key, value]) => key.startsWith('hls_') && key.endsWith('_url') && typeof value === 'string')?.[1];
+
+      if (!progressiveLocation && hlsLocation) {
+        try {
+          await streamHlsDownload(res, hlsLocation, token, id);
+        } catch (error) {
+          console.error('SoundCloud HLS download failed', error);
+          if (!res.headersSent) return send(res, 502, 'Unable to prepare this episode for offline listening');
+          res.destroy(error);
+        }
+        return;
+      }
+      if (!progressiveLocation) return send(res, 409, 'This episode is not available for offline download');
 
       let audioResponse;
-      if (new URL(location).hostname === 'api.soundcloud.com') {
-        const resolved = await fetch(location, { headers:authHeaders(token), redirect:'manual', signal:AbortSignal.timeout(15000) });
+      if (new URL(progressiveLocation).hostname === 'api.soundcloud.com') {
+        const resolved = await fetch(progressiveLocation, { headers:authHeaders(token), redirect:'manual', signal:AbortSignal.timeout(15000) });
         const playableLocation = resolved.headers.get('location');
         if (resolved.status >= 300 && resolved.status < 400 && playableLocation) {
           audioResponse = await fetch(playableLocation, { signal:AbortSignal.timeout(30000) });
@@ -160,7 +177,7 @@ const server = http.createServer(async (req, res) => {
           return send(res, resolved.status || 502, 'Unable to resolve download');
         }
       } else {
-        audioResponse = await fetch(location, { signal:AbortSignal.timeout(30000) });
+        audioResponse = await fetch(progressiveLocation, { signal:AbortSignal.timeout(30000) });
       }
 
       if (!audioResponse.ok || !audioResponse.body) return send(res, audioResponse.status || 502, 'Unable to download audio');
@@ -191,9 +208,99 @@ const server = http.createServer(async (req, res) => {
     res.end(body);
   } catch (error) {
     console.error(error);
+    if (res.headersSent) return res.destroy(error);
     send(res, error?.code === 'ENOENT' ? 404 : 500, error?.code === 'ENOENT' ? 'Not found' : 'Server error');
   }
 });
+
+async function fetchSoundcloudMedia(location, token, timeout = 30000) {
+  const protectedMedia = new URL(location).hostname === 'api.soundcloud.com';
+  const response = await fetch(location, {
+    headers:protectedMedia ? authHeaders(token) : undefined,
+    redirect:protectedMedia ? 'manual' : 'follow',
+    signal:AbortSignal.timeout(timeout)
+  });
+  const redirectLocation = response.headers.get('location');
+  if (response.status >= 300 && response.status < 400 && redirectLocation) {
+    return fetch(new URL(redirectLocation, location), { signal:AbortSignal.timeout(timeout) });
+  }
+  return response;
+}
+
+function hlsUri(line, baseUrl) {
+  return new URL(line.trim(), baseUrl).toString();
+}
+
+async function loadHlsSegments(location, token, depth = 0) {
+  if (depth > 3) throw new Error('Audio playlist has too many levels');
+  const playlistResponse = await fetchSoundcloudMedia(location, token, 30000);
+  if (!playlistResponse.ok) throw new Error(`Unable to open audio playlist (${playlistResponse.status})`);
+  const playlistUrl = playlistResponse.url || location;
+  const text = await playlistResponse.text();
+  if (!text.trimStart().startsWith('#EXTM3U')) throw new Error('SoundCloud returned an invalid audio playlist');
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const variantIndex = lines.findIndex(line => line.startsWith('#EXT-X-STREAM-INF'));
+  if (variantIndex >= 0) {
+    const variant = lines.slice(variantIndex + 1).find(line => !line.startsWith('#'));
+    if (!variant) throw new Error('Audio playlist has no playable version');
+    return loadHlsSegments(hlsUri(variant, playlistUrl), token, depth + 1);
+  }
+
+  const segments = [];
+  for (const line of lines) {
+    if (line.startsWith('#EXT-X-MAP:')) {
+      const match = line.match(/URI="([^"]+)"/i);
+      if (match) segments.push(hlsUri(match[1], playlistUrl));
+    } else if (!line.startsWith('#')) {
+      segments.push(hlsUri(line, playlistUrl));
+    }
+  }
+  if (!segments.length) throw new Error('Audio playlist contains no downloadable segments');
+  return segments;
+}
+
+function downloadFormat(response, segmentUrl) {
+  const type = (response.headers.get('content-type') || '').toLowerCase();
+  const path = new URL(segmentUrl).pathname.toLowerCase();
+  if (type.includes('mpeg') || path.endsWith('.mp3')) return { type:'audio/mpeg', extension:'mp3' };
+  if (type.includes('mp4') || /\.(m4a|m4s|mp4)$/.test(path)) return { type:'audio/mp4', extension:'m4a' };
+  if (type.includes('aac') || path.endsWith('.aac')) return { type:'audio/aac', extension:'aac' };
+  if (type.includes('ogg') || path.endsWith('.ogg') || path.endsWith('.opus')) return { type:'audio/ogg', extension:'ogg' };
+  return { type:'audio/mpeg', extension:'mp3' };
+}
+
+async function writeWebBody(res, body) {
+  for await (const chunk of Readable.fromWeb(body)) {
+    if (res.destroyed) return false;
+    if (!res.write(chunk)) await once(res, 'drain');
+  }
+  return true;
+}
+
+async function streamHlsDownload(res, location, token, id) {
+  const segments = await loadHlsSegments(location, token);
+  const batchSize = 6;
+  let headersSent = false;
+  for (let offset = 0; offset < segments.length; offset += batchSize) {
+    const urls = segments.slice(offset, offset + batchSize);
+    const responses = await Promise.all(urls.map(url => fetchSoundcloudMedia(url, token, 45000)));
+    const failed = responses.find(response => !response.ok || !response.body);
+    if (failed) throw new Error(`Unable to download an audio segment (${failed.status || 502})`);
+    if (!headersSent) {
+      const format = downloadFormat(responses[0], urls[0]);
+      res.writeHead(200, {
+        'content-type':format.type,
+        'cache-control':'private, no-store',
+        'content-disposition':`attachment; filename="episode-${id}.${format.extension}"`
+      });
+      headersSent = true;
+    }
+    for (const response of responses) {
+      if (!await writeWebBody(res, response.body)) return;
+    }
+  }
+  res.end();
+}
 
 function send(res, status, text) { res.writeHead(status, { 'content-type':'text/plain; charset=utf-8' }); res.end(text); }
 function sendJson(res, status, value) { res.writeHead(status, { 'content-type':'application/json; charset=utf-8', 'cache-control':'no-store' }); res.end(JSON.stringify(value)); }
