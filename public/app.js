@@ -3,7 +3,7 @@ window.Hls = Hls;
 document.documentElement.dataset.hls = Hls?.isSupported?.() ? 'supported' : 'native';
 
 const DEFAULT_FEED='https://feeds.soundcloud.com/users/soundcloud:users:1044681742/sounds.rss';
-const APP_VERSION='106';
+const APP_VERSION='107';
 const $=s=>document.querySelector(s); const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
 const state={feeds:JSON.parse(localStorage.getItem('wavecast.feeds')||JSON.stringify([DEFAULT_FEED])),episodes:JSON.parse(localStorage.getItem('wavecast.episodes')||'[]'),positions:JSON.parse(localStorage.getItem('wavecast.positions')||'{}'),downloaded:new Set(JSON.parse(localStorage.getItem('wavecast.downloaded')||'[]')),current:null};
 let filingRuleConfig={disabledBuiltInRules:[],builtInRuleEdits:{}};
