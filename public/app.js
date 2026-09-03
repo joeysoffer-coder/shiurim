@@ -3,7 +3,7 @@ window.Hls = Hls;
 document.documentElement.dataset.hls = Hls?.isSupported?.() ? 'supported' : 'native';
 
 const DEFAULT_FEED='https://feeds.soundcloud.com/users/soundcloud:users:1044681742/sounds.rss';
-const APP_VERSION='109';
+const APP_VERSION='110';
 const $=s=>document.querySelector(s); const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
 const state={feeds:JSON.parse(localStorage.getItem('wavecast.feeds')||JSON.stringify([DEFAULT_FEED])),episodes:JSON.parse(localStorage.getItem('wavecast.episodes')||'[]'),positions:JSON.parse(localStorage.getItem('wavecast.positions')||'{}'),downloaded:new Set(JSON.parse(localStorage.getItem('wavecast.downloaded')||'[]')),current:null};
 let filingRuleConfig={disabledBuiltInRules:[],builtInRuleEdits:{}};
@@ -1036,7 +1036,7 @@ const helpSteps=[
   {target:'.library-heading',title:'Your Shiurim Library',text:'Today’s Classes, folders, subfolders, and individual shiurim all appear here. Folders with the newest classes appear first unless Rabbi Joey has chosen a custom folder order.'},
   {target:'#searchInput',title:'Search the Entire Catalog',text:'Type an episode title, audio filename, or folder name. Search checks every folder and understands similar spellings, so small typing mistakes can still find the right class.'},
   {target:'#sortSelect',title:'Sort and Find Favorites',text:'Inside every folder, classes begin in audio filename A to Z order. You can change them to newest, oldest, title, or another filename order. Select Favorites only to see every class you saved.'},
-  {target:'#episodeList > :first-child',title:'Open Folders or Play a Class',text:'Tap a folder to see what is inside, or tap an episode to listen. Today’s releases are highlighted for one day while also remaining filed in the correct topic folder.'},
+  {target:'#episodeList > :first-child',title:'Open or Share Folders',text:'Tap a folder to see what is inside, or use its share arrow to send a link that opens that complete folder. Tap an episode to listen. Today’s releases remain filed in their topic folders too.'},
   {target:'.player-episode-actions',title:'Favorite, Download, or Share',text:'Favorite saves the class to your list. Download stores it on this device for offline listening. Share opens the phone’s sharing choices with a direct episode link.'},
   {target:'#player',title:'Now Playing Controls',text:'Play or pause, skip back 15 seconds, move forward 30 seconds, drag the progress bar, and choose a speed from 1× to 2×. Your place is remembered, and the next class plays automatically.'}
 ];
@@ -1095,4 +1095,77 @@ if(isInstalledApp()){
     if(!hasSeenInstalledHelp)localStorage.setItem(HELP_FIRST_LAUNCH_KEY,'1');
   }catch{}
   if(!hasSeenInstalledHelp)setTimeout(()=>{if(helpTour.hidden)openHelp()},350);
+}
+
+// v110: shareable deep links for every folder and subfolder.
+function folderPathFromCard(card){
+  if(card.dataset.searchFolder){try{return JSON.parse(decodeURIComponent(card.dataset.searchFolder))}catch{return[]}}
+  if(card.dataset.dafFolder)return['Daf Yomi',card.dataset.dafFolder];
+  if(card.dataset.rashiFolder)return['Humash Rashi',card.dataset.rashiFolder];
+  if(card.dataset.hokFolder)return["Hok L'Yisrael",card.dataset.hokFolder];
+  if(card.dataset.managedDeep)return[activeFolder,...activeManagedPath,card.dataset.managedDeep].filter(Boolean);
+  if(card.dataset.managedFolder)return[activeFolder,card.dataset.managedFolder].filter(Boolean);
+  if(card.dataset.folder)return[card.dataset.folder];
+  return[];
+}
+function activeFolderPathForShare(){
+  if($('#searchInput').value.trim()||!activeFolder)return[];
+  if(activeDafFolder)return['Daf Yomi',activeDafFolder];
+  if(activeRashiFolder)return['Humash Rashi',activeRashiFolder];
+  if(activeHokFolder)return["Hok L'Yisrael",activeHokFolder];
+  if(activeManagedSubfolder)return[activeFolder,activeManagedSubfolder];
+  return[activeFolder,...activeManagedPath];
+}
+function shareFolderPath(path){
+  if(!Array.isArray(path)||!path.length)return;
+  const url=new URL(location.origin+location.pathname);url.searchParams.set('folder',JSON.stringify(path));
+  const folderName=path.at(-1),locationName=path.length>1?path.join(' › '):folderName;
+  trackAnalytics('share_folder',{folder:locationName});
+  shareLink({title:`${folderName} — RJS Torah`,text:`Explore the ${locationName} folder on RJS Torah`,url:url.toString()});
+}
+function decorateShareableFolders(){
+  list.querySelectorAll('.folder-card').forEach(card=>{
+    const path=folderPathFromCard(card);if(!path.length||card.closest('.folder-card-wrap'))return;
+    const wrap=document.createElement('div');wrap.className='folder-card-wrap';card.replaceWith(wrap);wrap.append(card);
+    const share=document.createElement('button');share.type='button';share.className='share-folder-btn';share.textContent='↗';share.title=`Share ${path.at(-1)} folder`;share.setAttribute('aria-label',share.title);
+    share.addEventListener('click',event=>{event.preventDefault();event.stopPropagation();shareFolderPath(path)});wrap.append(share);
+  });
+  const heading=$('.library-heading'),path=activeFolderPathForShare();
+  heading.querySelector('.share-current-folder')?.remove();
+  if(path.length){const button=document.createElement('button');button.type='button';button.className='share-current-folder';button.textContent='Share folder';button.addEventListener('click',()=>shareFolderPath(path));heading.append(button)}
+}
+const renderBeforeFolderSharing=render;
+render=function(){renderBeforeFolderSharing();decorateShareableFolders()};
+render();
+
+function sharedFolderExists(path){
+  if(!path.length)return false;
+  if(path.length===1)return searchableFolderPaths().some(candidate=>candidate.length===1&&searchText(candidate[0])===searchText(path[0]));
+  if(path[0]==='Daf Yomi')return state.episodes.some(episode=>/daf/i.test(episode.title)&&dafFolderName(episode.title)===path[1]);
+  if(path[0]==='Humash Rashi')return state.episodes.some(episode=>/rashi/i.test(episode.title)&&rashiFolderName(episode.title)===path[1]);
+  if(path[0]==="Hok L'Yisrael")return state.episodes.some(episode=>/\bhok\s+l\s*['’]?\s*yisrael\b/i.test(episode.title)&&hokFolderName(episode.title)===path[1]);
+  return searchableFolderPaths().some(candidate=>candidate.length===path.length&&candidate.every((part,index)=>searchText(part)===searchText(path[index])));
+}
+function openSharedFolder(path){
+  $('#searchInput').value='';activeFolder=path[0];activeManagedPath=[];activeManagedSubfolder=null;activeDafFolder=null;activeRashiFolder=null;activeHokFolder=null;
+  let viewState={view:'folder',folder:path[0]};
+  if(path.length>1&&path[0]==='Daf Yomi'){activeDafFolder=path[1];viewState={view:'daf-subfolder',folder:path[0],dafFolder:path[1]}}
+  else if(path.length>1&&path[0]==='Humash Rashi'){activeRashiFolder=path[1];viewState={view:'rashi-subfolder',folder:path[0],rashiFolder:path[1]}}
+  else if(path.length>1&&path[0]==="Hok L'Yisrael"){activeHokFolder=path[1];viewState={view:'hok-subfolder',folder:path[0],hokFolder:path[1]}}
+  else if(path.length>1){activeManagedPath=path.slice(1);viewState={view:'managed-deep',folder:path[0],path:[...activeManagedPath]}}
+  const sharedUrl=new URL(location.origin+location.pathname);sharedUrl.searchParams.set('folder',JSON.stringify(path));
+  history.replaceState({view:'home'},'',location.pathname);history.pushState(viewState,'',sharedUrl.pathname+sharedUrl.search);
+  fastSortSelect.value='file-asc';render();scrollToLibraryTop();
+}
+const sharedFolderValue=new URLSearchParams(location.search).get('folder');
+if(sharedFolderValue&&!sharedEpisodeId){
+  let sharedPath=[];try{sharedPath=JSON.parse(sharedFolderValue)}catch{}
+  sharedPath=Array.isArray(sharedPath)?sharedPath.map(value=>String(value).trim()).filter(Boolean).slice(0,20):[];
+  let attempts=0;
+  const trySharedFolder=()=>{
+    if(sharedFolderExists(sharedPath))return openSharedFolder(sharedPath);
+    if(attempts++<40)return setTimeout(trySharedFolder,250);
+    setStatus('That shared folder could not be found.');
+  };
+  if(sharedPath.length)trySharedFolder();else setStatus('That shared folder link is invalid.');
 }

@@ -201,3 +201,12 @@ h1{font-size:clamp(44px,6.4vw,78px);line-height:.91;letter-spacing:-3.5px;margin
 }
 
 @media(prefers-reduced-motion:reduce){.folder-card,.episode,.back-library,.episode-actions button,.buttons button,.player-episode-actions button{transition:none!important}}
+
+/* v110 folder sharing */
+.folder-card-wrap{position:relative;min-width:0;height:100%}
+.folder-card-wrap>.folder-card{width:100%}
+.share-folder-btn{position:absolute;z-index:3;top:10px;right:10px;width:34px;height:34px;border:1px solid color-mix(in srgb,var(--accent) 42%,var(--line));border-radius:50%;background:color-mix(in srgb,var(--paper) 90%,transparent);color:var(--accent);font-size:18px;font-weight:900;line-height:1;cursor:pointer;box-shadow:0 3px 10px rgba(23,20,15,.09)}
+.share-folder-btn:hover,.share-folder-btn:focus-visible{background:var(--accent);color:var(--paper);outline:2px solid color-mix(in srgb,var(--accent) 35%,transparent);outline-offset:2px}
+.share-current-folder{margin-left:auto;border:1px solid var(--accent);border-radius:999px;background:transparent;color:var(--accent);padding:8px 12px;font-size:11px;font-weight:850;cursor:pointer;white-space:nowrap}
+.share-current-folder:hover,.share-current-folder:focus-visible{background:var(--accent);color:var(--paper)}
+@media(max-width:760px){.share-folder-btn{top:8px;right:8px;width:31px;height:31px;font-size:16px}.share-current-folder{padding:7px 10px;font-size:10px}}
