@@ -3,7 +3,7 @@ window.Hls = Hls;
 document.documentElement.dataset.hls = Hls?.isSupported?.() ? 'supported' : 'native';
 
 const DEFAULT_FEED='https://feeds.soundcloud.com/users/soundcloud:users:1044681742/sounds.rss';
-const APP_VERSION='110';
+const APP_VERSION='111';
 const $=s=>document.querySelector(s); const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
 const state={feeds:JSON.parse(localStorage.getItem('wavecast.feeds')||JSON.stringify([DEFAULT_FEED])),episodes:JSON.parse(localStorage.getItem('wavecast.episodes')||'[]'),positions:JSON.parse(localStorage.getItem('wavecast.positions')||'{}'),downloaded:new Set(JSON.parse(localStorage.getItem('wavecast.downloaded')||'[]')),current:null};
 let filingRuleConfig={disabledBuiltInRules:[],builtInRuleEdits:{}};
@@ -61,6 +61,8 @@ const filenameSortKey=name=>name.replace(/^\d+-joey-soffer-\d+-/i,'').replace(/^
 const DOWNLOAD_CACHE='js-torah-downloads-v1';
 const PLAYBACK_CHECKPOINT_KEY='rjs.playbackCheckpoint.v1';
 let manualPauseUntil=0,systemResumePending=false,resumeAttemptTimer=0;
+let pendingResumeTarget=null,resumeRestoreToken=0;
+const playbackRecoveryAttempts=new Map();
 const offlineUrl=id=>`/offline/audio/${encodeURIComponent(id)}`;
 const trackIdFor=e=>String(e.id||'').match(/tracks\/(\d+)/)?.[1]||String(e.audioUrl||'').match(/[?&]id=(\d+)/)?.[1]||'';
 function catalogDurationSeconds(episode){
@@ -199,11 +201,24 @@ function playEpisode(id,autoplay=true){
   const resume=()=>{
     const position=bestSavedPosition(id)||{},saved=Number(position.time||0),duration=Number(audio.duration),completed=position.completed===true||(Number.isFinite(duration)&&duration>0&&saved>=duration-2);
     state.positions[id]={...position,time:saved,duration:Number(position.duration||duration||0)};
-    if(saved>0&&Number.isFinite(duration)){try{audio.currentTime=completed?0:Math.min(saved,Math.max(0,duration-2))}catch{}}
+    if(saved>0&&!completed)armResumeTarget(id,saved);
+    applyResumeTarget();scheduleResumeRestore();
     if(autoplay)resumeAudioPlayback();
   };
   const trackId=trackIdFor(e),playUrl=state.downloaded.has(id)?offlineUrl(id):trackId?`/api/soundcloud/stream?id=${trackId}`:e.audioUrl,isApiStream=playUrl.startsWith('/api/soundcloud/stream');
-  if(isApiStream&&window.Hls?.isSupported()){hlsPlayer=new window.Hls({enableWorker:true});hlsPlayer.attachMedia(audio);hlsPlayer.on(window.Hls.Events.MEDIA_ATTACHED,()=>hlsPlayer.loadSource(playUrl));hlsPlayer.on(window.Hls.Events.MANIFEST_PARSED,resume);hlsPlayer.on(window.Hls.Events.ERROR,(_,data)=>{if(!data.fatal)return;if(data.type===window.Hls.ErrorTypes.NETWORK_ERROR)hlsPlayer.startLoad();else if(data.type===window.Hls.ErrorTypes.MEDIA_ERROR)hlsPlayer.recoverMediaError();else{hlsPlayer.destroy();hlsPlayer=null;setStatus('This older episode could not be played.')}})}else{audio.src=playUrl;audio.addEventListener('loadedmetadata',resume,{once:true})}
+  if(isApiStream&&window.Hls?.isSupported()){
+    hlsPlayer=new window.Hls({enableWorker:true});hlsPlayer.attachMedia(audio);
+    hlsPlayer.on(window.Hls.Events.MEDIA_ATTACHED,()=>hlsPlayer.loadSource(playUrl));
+    hlsPlayer.on(window.Hls.Events.MANIFEST_PARSED,resume);
+    [window.Hls.Events.LEVEL_LOADED,window.Hls.Events.FRAG_LOADED,window.Hls.Events.BUFFER_APPENDED].filter(Boolean).forEach(eventName=>hlsPlayer.on(eventName,()=>applyResumeTarget()));
+    hlsPlayer.on(window.Hls.Events.ERROR,(_,data)=>{
+      if(!data.fatal)return;
+      persistCurrentProgress();const saved=Number(bestSavedPosition(id)?.time||0);if(saved>0)armResumeTarget(id,saved);
+      if(data.type===window.Hls.ErrorTypes.NETWORK_ERROR){hlsPlayer.startLoad(saved>0?saved:-1);scheduleResumeRestore()}
+      else if(data.type===window.Hls.ErrorTypes.MEDIA_ERROR){hlsPlayer.recoverMediaError();scheduleResumeRestore()}
+      else{rebuildInterruptedPlayback(id,autoplay,'SoundCloud playback was interrupted.')}
+    });
+  }else{audio.src=playUrl;audio.addEventListener('loadedmetadata',resume,{once:true})}
 }
 function setStatus(s){$('#status').textContent=s.replace(/v\d+/g,`v${APP_VERSION}`)} function esc(s=''){return String(s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))} function formatDate(d){const x=new Date(d);return isNaN(x)?'Unknown date':x.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})} function clock(s){if(!isFinite(s))return'0:00';return`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`}
 history.replaceState({view:'home'},'');
@@ -221,11 +236,25 @@ render();const last=localStorage.getItem('wavecast.last');if(last)playEpisode(la
 // v109 reliable mobile resume: keep an independent atomic checkpoint across phone interruptions.
 let lastProgressSave=0;
 let intentionalSeekUntil=0;
-function noteIntentionalSeek(){intentionalSeekUntil=Date.now()+2500}
+function noteIntentionalSeek(){intentionalSeekUntil=Date.now()+2500;pendingResumeTarget=null;resumeRestoreToken++}
 function diskPosition(id){try{return JSON.parse(localStorage.getItem('wavecast.positions')||'{}')[id]||null}catch{return null}}
 function playbackCheckpoint(id){try{const value=JSON.parse(localStorage.getItem(PLAYBACK_CHECKPOINT_KEY)||'null');return value?.id===id&&Number.isFinite(Number(value.time))?value:null}catch{return null}}
 function writePlaybackCheckpoint(id,position){storeJson(PLAYBACK_CHECKPOINT_KEY,{id,time:Number(position?.time||0),duration:Number(position?.duration||0),completed:position?.completed===true,updatedAt:Date.now()})}
 function bestSavedPosition(id){const checkpoint=playbackCheckpoint(id);if(checkpoint)return checkpoint;const memory=state.positions[id],disk=diskPosition(id);if(!memory)return disk;if(!disk)return memory;return Number(disk.time||0)>Number(memory.time||0)?disk:memory}
+function armResumeTarget(id,time){const value=Number(time);if(id&&Number.isFinite(value)&&value>0)pendingResumeTarget={id:String(id),time:value,expiresAt:Date.now()+60000}}
+function applyResumeTarget(){
+  if(!pendingResumeTarget||!state.current||String(state.current.id)!==pendingResumeTarget.id)return false;
+  const target=pendingResumeTarget.time,current=Number(audio.currentTime)||0;
+  if(Date.now()>pendingResumeTarget.expiresAt){pendingResumeTarget=null;return false}
+  if(current>target+3){pendingResumeTarget=null;return true}
+  if(current>=target-1.5)return true;
+  try{audio.currentTime=target}catch{return false}
+  return Math.abs((Number(audio.currentTime)||0)-target)<2;
+}
+function scheduleResumeRestore(){
+  const token=++resumeRestoreToken;
+  [0,100,300,700,1500,3000,6000,12000,20000,35000,55000].forEach(delay=>setTimeout(()=>{if(token===resumeRestoreToken)applyResumeTarget()},delay));
+}
 function updateCurrentProgressSnapshot(){
   if(!state.current||!Number.isFinite(audio.currentTime))return;
   const id=state.current.id,current=Math.max(0,Number(audio.currentTime)),saved=bestSavedPosition(id),allowBackward=Date.now()<intentionalSeekUntil;
@@ -240,7 +269,7 @@ function persistCurrentProgress(options={}){
   writePlaybackCheckpoint(state.current.id,state.positions[state.current.id]);
   localStorage.setItem('wavecast.last',state.current.id);
 }
-function restoreCurrentProgress(){if(!state.current)return;const id=state.current.id,savedPosition=bestSavedPosition(id);if(savedPosition)state.positions[id]=savedPosition;const saved=Number(savedPosition?.time||0);if(saved>0&&savedPosition?.completed!==true&&Number.isFinite(saved)&&Math.abs(audio.currentTime-saved)>1){const maximum=Number.isFinite(audio.duration)&&audio.duration>2?audio.duration-2:saved;try{audio.currentTime=Math.min(saved,maximum)}catch{}}}
+function restoreCurrentProgress(){if(!state.current)return;const id=state.current.id,savedPosition=bestSavedPosition(id);if(savedPosition)state.positions[id]=savedPosition;const saved=Number(savedPosition?.time||0);if(saved>0&&savedPosition?.completed!==true&&Number.isFinite(saved)){armResumeTarget(id,saved);applyResumeTarget()}}
 function resumeAudioPlayback(){
   restoreCurrentProgress();
   if(state.current&&bestSavedPosition(state.current.id)?.completed===true){noteIntentionalSeek();try{audio.currentTime=0}catch{}state.positions[state.current.id]={time:0,duration:Number(audio.duration)||catalogDurationSeconds(state.current),completed:false};persistCurrentProgress({allowBackward:true})}
@@ -249,19 +278,46 @@ function resumeAudioPlayback(){
 }
 function pauseByUser(){manualPauseUntil=Date.now()+1500;systemResumePending=false;audio.pause();persistCurrentProgress()}
 function handlePlaybackPause(){persistCurrentProgress();if(state.current&&!audio.ended&&Date.now()>=manualPauseUntil)systemResumePending=true}
+function rebuildInterruptedPlayback(id=state.current?.id,shouldAutoplay=systemResumePending,message='Playback was interrupted.'){
+  if(!id)return false;
+  persistCurrentProgress();
+  const now=Date.now(),history=playbackRecoveryAttempts.get(String(id))||[],recent=history.filter(time=>now-time<30000);
+  if(recent.length>=2){setStatus(`${message} Your place is saved—tap Play to try again.`);return false}
+  recent.push(now);playbackRecoveryAttempts.set(String(id),recent);
+  manualPauseUntil=now+1500;
+  if(hlsPlayer){hlsPlayer.destroy();hlsPlayer=null}
+  audio.removeAttribute('src');audio.load();state.current=null;
+  setStatus(`${message} Restoring your saved place…`);
+  setTimeout(()=>playEpisode(id,shouldAutoplay),150);
+  return true;
+}
 function returnFromSystemInterruption(){
   restoreCurrentProgress();
   if(!systemResumePending||!state.current||!audio.paused)return;
   clearTimeout(resumeAttemptTimer);
-  resumeAttemptTimer=setTimeout(()=>{restoreCurrentProgress();resumeAudioPlayback()},250);
+  resumeAttemptTimer=setTimeout(()=>{
+    restoreCurrentProgress();const saved=Number(bestSavedPosition(state.current.id)?.time||0);
+    if(hlsPlayer&&saved>0&&(Number(audio.currentTime)||0)<saved-3){try{hlsPlayer.startLoad(saved)}catch{}scheduleResumeRestore()}
+    resumeAudioPlayback();
+  },250);
 }
 audio.addEventListener('timeupdate',()=>{const now=Date.now();if(now-lastProgressSave>=1000){lastProgressSave=now;persistCurrentProgress()}});
 audio.addEventListener('pause',handlePlaybackPause);
+['waiting','stalled','suspend','abort'].forEach(eventName=>audio.addEventListener(eventName,()=>{persistCurrentProgress();if(eventName==='abort'&&Date.now()>=manualPauseUntil){systemResumePending=true;scheduleResumeRestore()}}));
+audio.addEventListener('error',()=>{
+  if(!state.current||Date.now()<manualPauseUntil)return;
+  const saved=Number(bestSavedPosition(state.current.id)?.time||0);
+  if(saved>0&&(systemResumePending||pendingResumeTarget))rebuildInterruptedPlayback(state.current.id,systemResumePending,'The audio connection was interrupted.');
+});
 audio.addEventListener('loadedmetadata',restoreCurrentProgress);
 audio.addEventListener('durationchange',restoreCurrentProgress);
 audio.addEventListener('canplay',restoreCurrentProgress);
+audio.addEventListener('loadeddata',applyResumeTarget);
+audio.addEventListener('progress',applyResumeTarget);
+audio.addEventListener('playing',()=>{applyResumeTarget();scheduleResumeRestore()});
 audio.addEventListener('canplay',()=>{if(document.visibilityState==='visible')returnFromSystemInterruption()});
 window.addEventListener('pagehide',persistCurrentProgress);
+window.addEventListener('beforeunload',persistCurrentProgress);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){if(!audio.paused)systemResumePending=true;persistCurrentProgress()}else returnFromSystemInterruption()});
 document.addEventListener('freeze',persistCurrentProgress);
 document.addEventListener('resume',returnFromSystemInterruption);
@@ -805,6 +861,9 @@ playEpisode=function(id,autoplay=true){
 };
 audio.addEventListener('playing',()=>{
   systemResumePending=false;
+  const id=state.current?.id,saved=id?Number(bestSavedPosition(id)?.time||0):0;
+  if(id&&(Number(audio.currentTime)||0)>=Math.max(0,saved-2))playbackRecoveryAttempts.delete(String(id));
+  navigator.storage?.persist?.().catch(()=>{});
   if('mediaSession'in navigator)navigator.mediaSession.playbackState='playing';
 });
 audio.addEventListener('pause',()=>{
