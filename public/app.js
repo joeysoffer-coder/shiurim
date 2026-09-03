@@ -3,7 +3,7 @@ window.Hls = Hls;
 document.documentElement.dataset.hls = Hls?.isSupported?.() ? 'supported' : 'native';
 
 const DEFAULT_FEED='https://feeds.soundcloud.com/users/soundcloud:users:1044681742/sounds.rss';
-const APP_VERSION='108';
+const APP_VERSION='109';
 const $=s=>document.querySelector(s); const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
 const state={feeds:JSON.parse(localStorage.getItem('wavecast.feeds')||JSON.stringify([DEFAULT_FEED])),episodes:JSON.parse(localStorage.getItem('wavecast.episodes')||'[]'),positions:JSON.parse(localStorage.getItem('wavecast.positions')||'{}'),downloaded:new Set(JSON.parse(localStorage.getItem('wavecast.downloaded')||'[]')),current:null};
 let filingRuleConfig={disabledBuiltInRules:[],builtInRuleEdits:{}};
@@ -59,6 +59,8 @@ const text=(node,name)=>node.querySelector(name)?.textContent?.trim()||'';
 const filename=url=>{try{return decodeURIComponent(new URL(url).pathname.split('/').pop()||'audio')}catch{return url}};
 const filenameSortKey=name=>name.replace(/^\d+-joey-soffer-\d+-/i,'').replace(/^\d+[-_ ]+/,'');
 const DOWNLOAD_CACHE='js-torah-downloads-v1';
+const PLAYBACK_CHECKPOINT_KEY='rjs.playbackCheckpoint.v1';
+let manualPauseUntil=0,systemResumePending=false,resumeAttemptTimer=0;
 const offlineUrl=id=>`/offline/audio/${encodeURIComponent(id)}`;
 const trackIdFor=e=>String(e.id||'').match(/tracks\/(\d+)/)?.[1]||String(e.audioUrl||'').match(/[?&]id=(\d+)/)?.[1]||'';
 function catalogDurationSeconds(episode){
@@ -188,13 +190,27 @@ function searchableFolderPaths(){
 function searchFolders(query){return searchableFolderPaths().map(path=>({path,score:episodeSearchScore({title:path.join(' '),show:'',fileName:''},query)})).filter(item=>item.score>0).sort((a,b)=>b.score-a.score||collator.compare(a.path.join(' '),b.path.join(' '))).map(item=>item.path)}
 function episodeHTML(e,i){const p=state.positions[e.id]||{},pct=p.duration?Math.min(100,p.time/p.duration*100):0,played=pct>95,downloaded=state.downloaded.has(e.id),durationLabel=typeof e.duration==='number'?clock(e.duration):e.duration;return `<article class="episode" data-id="${esc(e.id)}"><span class="episode-number">${String(i+1).padStart(2,'0')}</span>${e.art?`<img class="art" src="${esc(e.art)}" alt="">`:'<div class="art"></div>'}<div><h3>${esc(e.title)}</h3><div class="meta">${esc(e.show)} · ${formatDate(e.date)}${durationLabel?' · '+esc(durationLabel):''}</div><div class="filename" title="${esc(e.fileName)}">${esc(e.fileName)}</div></div><div class="episode-state"><span class="availability ${downloaded?'is-downloaded':''}">${downloaded?'DOWNLOADED':'ONLINE'}</span><span class="played">${played?'PLAYED':pct?'<i class="dot"></i>IN PROGRESS':'UNPLAYED'}</span><div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div><button class="download-btn" type="button" data-download="${esc(e.id)}">${downloaded?'Remove download':'Download'}</button></div></article>`}
 function render(){const q=$('#searchInput').value.trim().toLocaleLowerCase(),groups=libraryGroups();if(q){const results=sortEpisodes(state.episodes.filter(e=>`${e.title} ${e.show} ${e.fileName}`.toLocaleLowerCase().includes(q)));$('#libraryTitle').textContent='Search results';$('#episodeCount').textContent=`${results.length} episode${results.length===1?'':'s'} across entire catalog`;list.innerHTML=results.length?results.map(episodeHTML).join(''):'<div class="empty">No episodes match your search.</div>';return}if(activeFolder){const folder=groups.folders.find(f=>f.name===activeFolder);if(!folder){activeFolder=null;return render()}const eps=sortEpisodes(folder.episodes);$('#libraryTitle').textContent=folder.name;$('#episodeCount').textContent=`${eps.length} episode${eps.length===1?'':'s'}`;list.innerHTML=`<button class="back-library" type="button" data-back>← All folders</button>${eps.length?eps.map(episodeHTML).join(''):'<div class="empty">This folder is empty.</div>'}`;return}$('#libraryTitle').textContent='Shiurim library';const folders=sortFolders(groups.folders),unique=sortEpisodes(groups.unique);$('#episodeCount').textContent=`${folders.length} folder${folders.length===1?'':'s'} · ${unique.length} individual · ${state.episodes.length} total episodes`;const folderHTML=folders.length?`<div class="folder-grid">${folders.map(f=>{const newest=[...f.episodes].sort((a,b)=>new Date(b.date)-new Date(a.date))[0];return `<button class="folder-card" type="button" data-folder="${esc(f.name)}"><span class="folder-icon">▰</span><strong>${esc(f.name)}</strong><span>${f.episodes.length} episodes</span>${newest?`<small>Latest: ${formatDate(newest.date)}</small>`:'<small>Empty folder</small>'}</button>`}).join('')}</div>`:'';const uniqueHTML=unique.length?`<h3 class="section-label">Individual episodes</h3>${unique.map(episodeHTML).join('')}`:'';list.innerHTML=folderHTML+uniqueHTML||'<div class="empty">No episodes are available.</div>'}
-function playEpisode(id,autoplay=true){const e=state.episodes.find(x=>x.id===id);if(!e)return;if(state.current?.id===id){if(autoplay)audio.play().catch(()=>setStatus('Press play to start listening.'));return}state.current=e;if(hlsPlayer){hlsPlayer.destroy();hlsPlayer=null}audio.removeAttribute('src');audio.load();$('#playerTitle').textContent=e.title;$('#playerShow').textContent=e.show;$('#playerArt').innerHTML=e.art?`<img src="${esc(e.art)}" alt="">`:'JS';$('#playerArt').querySelector('img')?.setAttribute('style','width:100%;height:100%;object-fit:cover');localStorage.setItem('wavecast.last',id);const resume=()=>{const saved=state.positions[id]?.time||0;if(saved&&isFinite(audio.duration))audio.currentTime=saved>=audio.duration*.95?0:Math.min(saved,Math.max(0,audio.duration-2));if(autoplay)audio.play().catch(()=>setStatus('Press play to start listening.'))};const trackId=trackIdFor(e),playUrl=state.downloaded.has(id)?offlineUrl(id):trackId?`/api/soundcloud/stream?id=${trackId}`:e.audioUrl,isApiStream=playUrl.startsWith('/api/soundcloud/stream');if(isApiStream&&window.Hls?.isSupported()){hlsPlayer=new window.Hls({enableWorker:true});hlsPlayer.attachMedia(audio);hlsPlayer.on(window.Hls.Events.MEDIA_ATTACHED,()=>hlsPlayer.loadSource(playUrl));hlsPlayer.on(window.Hls.Events.MANIFEST_PARSED,resume);hlsPlayer.on(window.Hls.Events.ERROR,(_,data)=>{if(!data.fatal)return;if(data.type===window.Hls.ErrorTypes.NETWORK_ERROR)hlsPlayer.startLoad();else if(data.type===window.Hls.ErrorTypes.MEDIA_ERROR)hlsPlayer.recoverMediaError();else{hlsPlayer.destroy();hlsPlayer=null;setStatus('This older episode could not be played.')}})}else{audio.src=playUrl;audio.addEventListener('loadedmetadata',resume,{once:true})}}
+function playEpisode(id,autoplay=true){
+  const e=state.episodes.find(x=>x.id===id);if(!e)return;
+  if(state.current?.id===id){restoreCurrentProgress();if(autoplay)resumeAudioPlayback();return}
+  manualPauseUntil=Date.now()+1000;systemResumePending=false;
+  state.current=e;if(hlsPlayer){hlsPlayer.destroy();hlsPlayer=null}audio.removeAttribute('src');audio.load();
+  $('#playerTitle').textContent=e.title;$('#playerShow').textContent=e.show;$('#playerArt').innerHTML=e.art?`<img src="${esc(e.art)}" alt="">`:'JS';$('#playerArt').querySelector('img')?.setAttribute('style','width:100%;height:100%;object-fit:cover');localStorage.setItem('wavecast.last',id);
+  const resume=()=>{
+    const position=bestSavedPosition(id)||{},saved=Number(position.time||0),duration=Number(audio.duration),completed=position.completed===true||(Number.isFinite(duration)&&duration>0&&saved>=duration-2);
+    state.positions[id]={...position,time:saved,duration:Number(position.duration||duration||0)};
+    if(saved>0&&Number.isFinite(duration)){try{audio.currentTime=completed?0:Math.min(saved,Math.max(0,duration-2))}catch{}}
+    if(autoplay)resumeAudioPlayback();
+  };
+  const trackId=trackIdFor(e),playUrl=state.downloaded.has(id)?offlineUrl(id):trackId?`/api/soundcloud/stream?id=${trackId}`:e.audioUrl,isApiStream=playUrl.startsWith('/api/soundcloud/stream');
+  if(isApiStream&&window.Hls?.isSupported()){hlsPlayer=new window.Hls({enableWorker:true});hlsPlayer.attachMedia(audio);hlsPlayer.on(window.Hls.Events.MEDIA_ATTACHED,()=>hlsPlayer.loadSource(playUrl));hlsPlayer.on(window.Hls.Events.MANIFEST_PARSED,resume);hlsPlayer.on(window.Hls.Events.ERROR,(_,data)=>{if(!data.fatal)return;if(data.type===window.Hls.ErrorTypes.NETWORK_ERROR)hlsPlayer.startLoad();else if(data.type===window.Hls.ErrorTypes.MEDIA_ERROR)hlsPlayer.recoverMediaError();else{hlsPlayer.destroy();hlsPlayer=null;setStatus('This older episode could not be played.')}})}else{audio.src=playUrl;audio.addEventListener('loadedmetadata',resume,{once:true})}
+}
 function setStatus(s){$('#status').textContent=s.replace(/v\d+/g,`v${APP_VERSION}`)} function esc(s=''){return String(s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))} function formatDate(d){const x=new Date(d);return isNaN(x)?'Unknown date':x.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})} function clock(s){if(!isFinite(s))return'0:00';return`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`}
 history.replaceState({view:'home'},'');
 list.addEventListener('click',event=>{const download=event.target.closest('[data-download]'),folder=event.target.closest('[data-folder]'),back=event.target.closest('[data-back]');if(download){event.preventDefault();event.stopImmediatePropagation();toggleDownload(download.dataset.download,download);return}if(folder){history.pushState({view:'folder',folder:folder.dataset.folder},'');return}if(back){event.preventDefault();event.stopImmediatePropagation();history.back()}},true);
 $('#searchInput').addEventListener('input',event=>{const query=event.target.value;if(query){if(history.state?.view!=='search')history.pushState({view:'search',query},'');else history.replaceState({...history.state,query},'')}else if(history.state?.view==='search')history.back()});
 window.addEventListener('popstate',event=>{activeFolder=event.state?.view==='folder'?event.state.folder:null;$('#searchInput').value=event.state?.view==='search'?event.state.query||'':'';render()});
-list.addEventListener('click',e=>{const folder=e.target.closest('[data-folder]'),back=e.target.closest('[data-back]'),row=e.target.closest('.episode');if(folder){activeFolder=folder.dataset.folder;$('#searchInput').value='';render()}else if(back){activeFolder=null;$('#searchInput').value='';render()}else if(row)playEpisode(row.dataset.id)});$('#searchInput').addEventListener('input',render);$('#sortSelect').addEventListener('input',render);$('#sortSelect').addEventListener('change',render);$('#refreshBtn').addEventListener('click',()=>refresh(true));$('#addFeedBtn').addEventListener('click',()=>{const url=$('#feedInput').value.trim();try{new URL(url);if(!state.feeds.includes(url))state.feeds.push(url);save();refresh()}catch{setStatus('Enter a valid RSS feed URL.')}});$('#playBtn').onclick=()=>state.current?(audio.paused?audio.play():audio.pause()):state.episodes[0]&&playEpisode(state.episodes[0].id);$('#backBtn').onclick=()=>{noteIntentionalSeek();audio.currentTime=Math.max(0,audio.currentTime-15)};$('#forwardBtn').onclick=()=>audio.currentTime=Math.min(audio.duration||Infinity,audio.currentTime+30);$('#speedSelect').onchange=e=>audio.playbackRate=Number(e.target.value);const seekControl=$('#seek');let seekDragging=false,seekWasPlaying=false;seekControl.onpointerdown=()=>{seekDragging=true;seekWasPlaying=!audio.paused};seekControl.onkeydown=()=>{if(!seekDragging)seekWasPlaying=!audio.paused;seekDragging=true};seekControl.oninput=e=>{if(audio.duration)$('#currentTime').textContent=clock(audio.duration*Number(e.target.value)/100)};seekControl.onchange=e=>{if(!audio.duration){seekDragging=false;return}const target=audio.duration*Number(e.target.value)/100;noteIntentionalSeek();audio.currentTime=target;seekDragging=false;$('#currentTime').textContent=clock(target);if(seekWasPlaying)audio.play().catch(()=>{});persistCurrentProgress({allowBackward:true})};seekControl.onpointercancel=()=>{seekDragging=false};audio.addEventListener('play',()=>{$('#playBtn').textContent='Ⅱ';$('#playBtn').ariaLabel='Pause';setStatus('Playing · v9')});audio.addEventListener('pause',()=>{$('#playBtn').textContent='▶';$('#playBtn').ariaLabel='Play'});audio.addEventListener('error',()=>setStatus('This episode could not be played. Refresh the catalog and try again. · v9'));audio.addEventListener('timeupdate',()=>{if(!state.current)return;if(!seekDragging){$('#currentTime').textContent=clock(audio.currentTime);$('#duration').textContent=clock(audio.duration);seekControl.value=audio.duration?audio.currentTime/audio.duration*100:0}updateCurrentProgressSnapshot()});window.addEventListener('beforeunload',save);document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='Space'){e.preventDefault();$('#playBtn').click()}else if(e.code==='ArrowLeft'){e.preventDefault();noteIntentionalSeek();audio.currentTime=Math.max(0,audio.currentTime-15)}else if(e.code==='ArrowRight'){e.preventDefault();audio.currentTime=Math.min(audio.duration||Infinity,audio.currentTime+30)}});
+list.addEventListener('click',e=>{const folder=e.target.closest('[data-folder]'),back=e.target.closest('[data-back]'),row=e.target.closest('.episode');if(folder){activeFolder=folder.dataset.folder;$('#searchInput').value='';render()}else if(back){activeFolder=null;$('#searchInput').value='';render()}else if(row)playEpisode(row.dataset.id)});$('#searchInput').addEventListener('input',render);$('#sortSelect').addEventListener('input',render);$('#sortSelect').addEventListener('change',render);$('#refreshBtn').addEventListener('click',()=>refresh(true));$('#addFeedBtn').addEventListener('click',()=>{const url=$('#feedInput').value.trim();try{new URL(url);if(!state.feeds.includes(url))state.feeds.push(url);save();refresh()}catch{setStatus('Enter a valid RSS feed URL.')}});$('#playBtn').onclick=()=>state.current?(audio.paused?resumeAudioPlayback():pauseByUser()):state.episodes[0]&&playEpisode(state.episodes[0].id);$('#backBtn').onclick=()=>{noteIntentionalSeek();audio.currentTime=Math.max(0,audio.currentTime-15)};$('#forwardBtn').onclick=()=>audio.currentTime=Math.min(audio.duration||Infinity,audio.currentTime+30);$('#speedSelect').onchange=e=>audio.playbackRate=Number(e.target.value);const seekControl=$('#seek');let seekDragging=false,seekWasPlaying=false;seekControl.onpointerdown=()=>{seekDragging=true;seekWasPlaying=!audio.paused};seekControl.onkeydown=()=>{if(!seekDragging)seekWasPlaying=!audio.paused;seekDragging=true};seekControl.oninput=e=>{if(audio.duration)$('#currentTime').textContent=clock(audio.duration*Number(e.target.value)/100)};seekControl.onchange=e=>{if(!audio.duration){seekDragging=false;return}const target=audio.duration*Number(e.target.value)/100;noteIntentionalSeek();audio.currentTime=target;seekDragging=false;$('#currentTime').textContent=clock(target);if(seekWasPlaying)resumeAudioPlayback();persistCurrentProgress({allowBackward:true})};seekControl.onpointercancel=()=>{seekDragging=false};audio.addEventListener('play',()=>{$('#playBtn').textContent='Ⅱ';$('#playBtn').ariaLabel='Pause';setStatus('Playing · v9')});audio.addEventListener('pause',()=>{$('#playBtn').textContent='▶';$('#playBtn').ariaLabel='Play'});audio.addEventListener('error',()=>setStatus('This episode could not be played. Refresh the catalog and try again. · v9'));audio.addEventListener('timeupdate',()=>{if(!state.current)return;if(!seekDragging){$('#currentTime').textContent=clock(audio.currentTime);$('#duration').textContent=clock(audio.duration);seekControl.value=audio.duration?audio.currentTime/audio.duration*100:0}updateCurrentProgressSnapshot()});window.addEventListener('beforeunload',save);document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='Space'){e.preventDefault();$('#playBtn').click()}else if(e.code==='ArrowLeft'){e.preventDefault();noteIntentionalSeek();audio.currentTime=Math.max(0,audio.currentTime-15)}else if(e.code==='ArrowRight'){e.preventDefault();audio.currentTime=Math.min(audio.duration||Infinity,audio.currentTime+30)}});
 let installPrompt;
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;$('#installBtn').hidden=false});
 $('#installBtn').addEventListener('click',async()=>{if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;$('#installBtn').hidden=true}else{showInstallHelp()}});
@@ -202,37 +218,55 @@ function showInstallHelp(){const ios=/iphone|ipad|ipod/i.test(navigator.userAgen
 $('#closeInstallHelp').onclick=()=>$('#installHelp').hidden=true;
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 render();const last=localStorage.getItem('wavecast.last');if(last)playEpisode(last,false);refresh();
-// v108 reliable mobile resume: never let a phone interruption overwrite a good checkpoint with zero.
+// v109 reliable mobile resume: keep an independent atomic checkpoint across phone interruptions.
 let lastProgressSave=0;
 let intentionalSeekUntil=0;
 function noteIntentionalSeek(){intentionalSeekUntil=Date.now()+2500}
 function diskPosition(id){try{return JSON.parse(localStorage.getItem('wavecast.positions')||'{}')[id]||null}catch{return null}}
-function bestSavedPosition(id){const memory=state.positions[id],disk=diskPosition(id);if(!memory)return disk;if(!disk)return memory;return Number(disk.time||0)>Number(memory.time||0)?disk:memory}
+function playbackCheckpoint(id){try{const value=JSON.parse(localStorage.getItem(PLAYBACK_CHECKPOINT_KEY)||'null');return value?.id===id&&Number.isFinite(Number(value.time))?value:null}catch{return null}}
+function writePlaybackCheckpoint(id,position){storeJson(PLAYBACK_CHECKPOINT_KEY,{id,time:Number(position?.time||0),duration:Number(position?.duration||0),completed:position?.completed===true,updatedAt:Date.now()})}
+function bestSavedPosition(id){const checkpoint=playbackCheckpoint(id);if(checkpoint)return checkpoint;const memory=state.positions[id],disk=diskPosition(id);if(!memory)return disk;if(!disk)return memory;return Number(disk.time||0)>Number(memory.time||0)?disk:memory}
 function updateCurrentProgressSnapshot(){
   if(!state.current||!Number.isFinite(audio.currentTime))return;
   const id=state.current.id,current=Math.max(0,Number(audio.currentTime)),saved=bestSavedPosition(id),allowBackward=Date.now()<intentionalSeekUntil;
   if(!allowBackward&&Number(saved?.time||0)>current+3){state.positions[id]=saved;return}
-  state.positions[id]={time:current,duration:Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:(saved?.duration||0)};
+  state.positions[id]={time:current,duration:Number.isFinite(audio.duration)&&audio.duration>0?audio.duration:(saved?.duration||0),completed:false};
 }
 function persistCurrentProgress(options={}){
   if(!state.current||!Number.isFinite(audio.currentTime))return;
   if(options?.allowBackward===true)noteIntentionalSeek();
   updateCurrentProgressSnapshot();
   storeJson('wavecast.positions',state.positions);
+  writePlaybackCheckpoint(state.current.id,state.positions[state.current.id]);
   localStorage.setItem('wavecast.last',state.current.id);
 }
-function restoreCurrentProgress(){if(!state.current)return;const id=state.current.id,disk=diskPosition(id);if(Number(disk?.time||0)>Number(state.positions[id]?.time||0))state.positions[id]=disk;const saved=Number(state.positions[id]?.time||0);if(saved>0&&Number.isFinite(saved)&&Math.abs(audio.currentTime-saved)>1){const maximum=Number.isFinite(audio.duration)&&audio.duration>2?audio.duration-2:saved;try{audio.currentTime=Math.min(saved,maximum)}catch{}}}
-audio.addEventListener('timeupdate',()=>{const now=Date.now();if(now-lastProgressSave>=2000){lastProgressSave=now;persistCurrentProgress()}});
-audio.addEventListener('pause',persistCurrentProgress);
+function restoreCurrentProgress(){if(!state.current)return;const id=state.current.id,savedPosition=bestSavedPosition(id);if(savedPosition)state.positions[id]=savedPosition;const saved=Number(savedPosition?.time||0);if(saved>0&&savedPosition?.completed!==true&&Number.isFinite(saved)&&Math.abs(audio.currentTime-saved)>1){const maximum=Number.isFinite(audio.duration)&&audio.duration>2?audio.duration-2:saved;try{audio.currentTime=Math.min(saved,maximum)}catch{}}}
+function resumeAudioPlayback(){
+  restoreCurrentProgress();
+  if(state.current&&bestSavedPosition(state.current.id)?.completed===true){noteIntentionalSeek();try{audio.currentTime=0}catch{}state.positions[state.current.id]={time:0,duration:Number(audio.duration)||catalogDurationSeconds(state.current),completed:false};persistCurrentProgress({allowBackward:true})}
+  systemResumePending=false;
+  return audio.play().catch(()=>{systemResumePending=true;setStatus('Your place is saved. Tap Play to continue listening.')});
+}
+function pauseByUser(){manualPauseUntil=Date.now()+1500;systemResumePending=false;audio.pause();persistCurrentProgress()}
+function handlePlaybackPause(){persistCurrentProgress();if(state.current&&!audio.ended&&Date.now()>=manualPauseUntil)systemResumePending=true}
+function returnFromSystemInterruption(){
+  restoreCurrentProgress();
+  if(!systemResumePending||!state.current||!audio.paused)return;
+  clearTimeout(resumeAttemptTimer);
+  resumeAttemptTimer=setTimeout(()=>{restoreCurrentProgress();resumeAudioPlayback()},250);
+}
+audio.addEventListener('timeupdate',()=>{const now=Date.now();if(now-lastProgressSave>=1000){lastProgressSave=now;persistCurrentProgress()}});
+audio.addEventListener('pause',handlePlaybackPause);
 audio.addEventListener('loadedmetadata',restoreCurrentProgress);
 audio.addEventListener('durationchange',restoreCurrentProgress);
 audio.addEventListener('canplay',restoreCurrentProgress);
+audio.addEventListener('canplay',()=>{if(document.visibilityState==='visible')returnFromSystemInterruption()});
 window.addEventListener('pagehide',persistCurrentProgress);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')persistCurrentProgress();else restoreCurrentProgress()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){if(!audio.paused)systemResumePending=true;persistCurrentProgress()}else returnFromSystemInterruption()});
 document.addEventListener('freeze',persistCurrentProgress);
-document.addEventListener('resume',restoreCurrentProgress);
-window.addEventListener('pageshow',restoreCurrentProgress);
-window.addEventListener('focus',restoreCurrentProgress);
+document.addEventListener('resume',returnFromSystemInterruption);
+window.addEventListener('pageshow',returnFromSystemInterruption);
+window.addEventListener('focus',returnFromSystemInterruption);
 
 const analyticsPlayedEpisodes=new Set();
 let analyticsListenEpisode='',analyticsListenLast=0,analyticsListenSeconds=0;
@@ -481,7 +515,8 @@ audio.addEventListener('ended',()=>{
   if(!state.current)return;
   if(recoverUnexpectedPreview())return;
   const expected=catalogDurationSeconds(state.current),current=Number(audio.currentTime)||0,mediaDuration=Number(audio.duration)||0;
-  const genuinelyFinished=expected>=120?current>=expected*.95:(mediaDuration>0&&current>=mediaDuration-2);
+  const completionTolerance=expected>=120?Math.min(15,Math.max(3,expected*.01)):2;
+  const genuinelyFinished=expected>=120?current>=expected-completionTolerance:(mediaDuration>0&&current>=mediaDuration-2);
   if(!genuinelyFinished){
     const interruptedId=state.current.id;
     persistCurrentProgress();
@@ -492,7 +527,8 @@ audio.addEventListener('ended',()=>{
   }
   flushListeningAnalytics();trackAnalytics('episode_complete',analyticsEpisode(state.current));
   const completedId=state.current.id;
-  state.positions[completedId]={time:Number.isFinite(audio.duration)?audio.duration:audio.currentTime,duration:Number.isFinite(audio.duration)?audio.duration:(state.positions[completedId]?.duration||0)};
+  state.positions[completedId]={time:Number.isFinite(audio.duration)?audio.duration:audio.currentTime,duration:Number.isFinite(audio.duration)?audio.duration:(state.positions[completedId]?.duration||0),completed:true};
+  writePlaybackCheckpoint(completedId,state.positions[completedId]);
   save();
   render();
   if(!continuePlayback(completedId))setStatus('Episode complete.');
@@ -507,7 +543,8 @@ audio.addEventListener('timeupdate',()=>{
   const nextId=nextPlaybackId(currentId);
   if(!nextId||nextId===currentId)return;
   backgroundHandoffFrom=currentId;
-  state.positions[currentId]={time:audio.duration,duration:audio.duration};
+  state.positions[currentId]={time:audio.duration,duration:audio.duration,completed:true};
+  writePlaybackCheckpoint(currentId,state.positions[currentId]);
   save();
   ignoreEndedUntil=Date.now()+3000;
   continuePlayback(currentId);
@@ -767,6 +804,7 @@ playEpisode=function(id,autoplay=true){
   }
 };
 audio.addEventListener('playing',()=>{
+  systemResumePending=false;
   if('mediaSession'in navigator)navigator.mediaSession.playbackState='playing';
 });
 audio.addEventListener('pause',()=>{
@@ -778,8 +816,8 @@ audio.addEventListener('timeupdate',()=>{
 });
 if('mediaSession'in navigator){
   const setMediaAction=(action,handler)=>{try{navigator.mediaSession.setActionHandler(action,handler)}catch{}};
-  setMediaAction('play',()=>audio.play());
-  setMediaAction('pause',()=>audio.pause());
+  setMediaAction('play',resumeAudioPlayback);
+  setMediaAction('pause',pauseByUser);
   setMediaAction('seekbackward',details=>{noteIntentionalSeek();audio.currentTime=Math.max(0,audio.currentTime-(details.seekOffset||15))});
   setMediaAction('seekforward',details=>{audio.currentTime=Math.min(audio.duration||Infinity,audio.currentTime+(details.seekOffset||30))});
   setMediaAction('nexttrack',()=>{
@@ -788,7 +826,7 @@ if('mediaSession'in navigator){
   });
   setMediaAction('previoustrack',()=>{
     const index=state.current?playbackQueue.indexOf(state.current.id):-1,previousId=index>0?playbackQueue[index-1]:null;
-    if(previousId)playEpisode(previousId,true);else audio.currentTime=0;
+    if(previousId)playEpisode(previousId,true);else{noteIntentionalSeek();audio.currentTime=0;persistCurrentProgress({allowBackward:true})}
   });
 }
 
