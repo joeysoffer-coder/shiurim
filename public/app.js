@@ -3,7 +3,7 @@ window.Hls = Hls;
 document.documentElement.dataset.hls = Hls?.isSupported?.() ? 'supported' : 'native';
 
 const DEFAULT_FEED='https://feeds.soundcloud.com/users/soundcloud:users:1044681742/sounds.rss';
-const APP_VERSION='111';
+const APP_VERSION='112';
 const $=s=>document.querySelector(s); const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
 const state={feeds:JSON.parse(localStorage.getItem('wavecast.feeds')||JSON.stringify([DEFAULT_FEED])),episodes:JSON.parse(localStorage.getItem('wavecast.episodes')||'[]'),positions:JSON.parse(localStorage.getItem('wavecast.positions')||'{}'),downloaded:new Set(JSON.parse(localStorage.getItem('wavecast.downloaded')||'[]')),current:null};
 let filingRuleConfig={disabledBuiltInRules:[],builtInRuleEdits:{}};
@@ -26,7 +26,7 @@ function applyAppTheme(themeId='classic'){
   const icon=`/icon-theme-${id}-512.png?v=97`;
   document.querySelector('.brand-mark')?.setAttribute('src',icon);
   document.querySelector('link[rel="apple-touch-icon"]')?.setAttribute('href',icon);
-  document.querySelector('link[rel="manifest"]')?.setAttribute('href',`/manifest.webmanifest?theme=${encodeURIComponent(id)}&v=97`);
+  document.querySelector('link[rel="manifest"]')?.setAttribute('href',`/manifest.webmanifest?theme=${encodeURIComponent(id)}&v=112`);
   localStorage.setItem('rjs.appTheme',id);
 }
 applyAppTheme(localStorage.getItem('rjs.appTheme')||'classic');
@@ -231,6 +231,15 @@ window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();ins
 $('#installBtn').addEventListener('click',async()=>{if(installPrompt){installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;$('#installBtn').hidden=true}else{showInstallHelp()}});
 function showInstallHelp(){const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);$('#installHelpText').textContent=ios?'In Safari, tap the Share button, then choose “Add to Home Screen.”':'Open your browser menu and choose “Install app” or “Add to Home screen.”';$('#installHelp').hidden=false}
 $('#closeInstallHelp').onclick=()=>$('#installHelp').hidden=true;
+function openInstalledListeningApp(){
+  if(!sharedEpisodeId)return;
+  const position=bestSavedPosition(sharedEpisodeId),params=new URLSearchParams({episode:sharedEpisodeId});
+  if(Number(position?.time||0)>0)params.set('resume',String(Math.floor(Number(position.time))));
+  const fallback=`${location.origin}/?${params}`;
+  if(/Android/i.test(navigator.userAgent)){location.href=`intent://${location.host}/?${params}#Intent;scheme=https;S.browser_fallback_url=${encodeURIComponent(fallback)};end`;return}
+  location.href=fallback;
+}
+$('#openInstalledAppBtn').addEventListener('click',openInstalledListeningApp);
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 render();const last=localStorage.getItem('wavecast.last');if(last)playEpisode(last,false);refresh();
 // v109 reliable mobile resume: keep an independent atomic checkpoint across phone interruptions.
@@ -239,8 +248,10 @@ let intentionalSeekUntil=0;
 function noteIntentionalSeek(){intentionalSeekUntil=Date.now()+2500;pendingResumeTarget=null;resumeRestoreToken++}
 function diskPosition(id){try{return JSON.parse(localStorage.getItem('wavecast.positions')||'{}')[id]||null}catch{return null}}
 function playbackCheckpoint(id){try{const value=JSON.parse(localStorage.getItem(PLAYBACK_CHECKPOINT_KEY)||'null');return value?.id===id&&Number.isFinite(Number(value.time))?value:null}catch{return null}}
-function writePlaybackCheckpoint(id,position){storeJson(PLAYBACK_CHECKPOINT_KEY,{id,time:Number(position?.time||0),duration:Number(position?.duration||0),completed:position?.completed===true,updatedAt:Date.now()})}
-function bestSavedPosition(id){const checkpoint=playbackCheckpoint(id);if(checkpoint)return checkpoint;const memory=state.positions[id],disk=diskPosition(id);if(!memory)return disk;if(!disk)return memory;return Number(disk.time||0)>Number(memory.time||0)?disk:memory}
+const episodeCheckpointKey=id=>`rjs.episodeCheckpoint.${encodeURIComponent(String(id))}`;
+function episodeCheckpoint(id){try{const value=JSON.parse(localStorage.getItem(episodeCheckpointKey(id))||'null');return value?.id===id&&Number.isFinite(Number(value.time))?value:null}catch{return null}}
+function writePlaybackCheckpoint(id,position){const value={id,time:Number(position?.time||0),duration:Number(position?.duration||0),completed:position?.completed===true,updatedAt:Date.now()};storeJson(PLAYBACK_CHECKPOINT_KEY,value);storeJson(episodeCheckpointKey(id),value)}
+function bestSavedPosition(id){const durable=[playbackCheckpoint(id),episodeCheckpoint(id)].filter(Boolean).sort((a,b)=>Number(b.updatedAt||0)-Number(a.updatedAt||0))[0];if(durable)return durable;const memory=state.positions[id],disk=diskPosition(id);if(!memory)return disk;if(!disk)return memory;return Number(disk.time||0)>Number(memory.time||0)?disk:memory}
 function armResumeTarget(id,time){const value=Number(time);if(id&&Number.isFinite(value)&&value>0)pendingResumeTarget={id:String(id),time:value,expiresAt:Date.now()+60000}}
 function applyResumeTarget(){
   if(!pendingResumeTarget||!state.current||String(state.current.id)!==pendingResumeTarget.id)return false;
@@ -721,6 +732,7 @@ window.addEventListener('popstate',event=>{
 });
 
 const sharedEpisodeId=new URLSearchParams(location.search).get('episode');
+const sharedResumeTime=Math.max(0,Number(new URLSearchParams(location.search).get('resume'))||0);
 if(sharedEpisodeId){
   let sharedEpisodeAttempts=0;
   const openSharedEpisode=window.setInterval(()=>{
@@ -728,6 +740,7 @@ if(sharedEpisodeId){
     if(!episode&&sharedEpisodeAttempts++<30)return;
     window.clearInterval(openSharedEpisode);
     if(!episode)return setStatus('That shared episode could not be found.');
+    if(sharedResumeTime>0){state.positions[episode.id]={time:sharedResumeTime,duration:catalogDurationSeconds(episode),completed:false};writePlaybackCheckpoint(episode.id,state.positions[episode.id]);storeJson('wavecast.positions',state.positions)}
     $('#searchInput').value='';
     activeFolder=null;
     activeDafFolder=null;
@@ -735,7 +748,8 @@ if(sharedEpisodeId){
     activeHokFolder=null;
     activeManagedPath=[];
     activeManagedSubfolder=null;
-    history.replaceState({view:'home'},'',`${location.pathname}${location.hash}`);
+    if(isInstalledApp())history.replaceState({view:'home'},'',`${location.pathname}${location.hash}`);
+    else if(/Android/i.test(navigator.userAgent))$('#openInstalledAppBtn').hidden=false;
     render();
     playEpisode(episode.id,false);
     window.scrollTo({top:0,left:0,behavior:'instant'});
