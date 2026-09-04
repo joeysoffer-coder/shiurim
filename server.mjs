@@ -308,7 +308,8 @@ function sendManifest(res, themeId, theme) {
   const icon = `/icon-theme-${themeId}-512.png?v=97`;
   res.writeHead(200, { 'content-type':'application/manifest+json; charset=utf-8', 'cache-control':'no-store' });
   res.end(JSON.stringify({
-    name:'RJS Torah', short_name:'RJS Torah', description:'Rabbi Joey Soffer Shiurim', start_url:'/', display:'standalone',
+    name:'RJS Torah', short_name:'RJS Torah', description:'Rabbi Joey Soffer Shiurim', id:'/', start_url:'/', scope:'/',
+    launch_handler:{ client_mode:['navigate-existing','auto'] }, handle_links:'preferred', display:'standalone',
     background_color:theme.background, theme_color:theme.ink, orientation:'any',
     icons:[{src:icon,sizes:'512x512',type:'image/png',purpose:'any'},{src:icon,sizes:'512x512',type:'image/png',purpose:'maskable'}]
   }));
